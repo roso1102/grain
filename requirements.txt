@@ -1,0 +1,13 @@
+﻿fastapi
+uvicorn
+pydantic
+pydantic-settings
+httpx
+supabase
+python-telegram-bot
+google-generativeai
+sentence-transformers
+beautifulsoup4
+lxml
+pdfplumber
+

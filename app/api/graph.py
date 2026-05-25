@@ -1,0 +1,2 @@
+﻿# GET /related-notes/{id}
+

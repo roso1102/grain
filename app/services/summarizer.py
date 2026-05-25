@@ -1,0 +1,2 @@
+﻿# Note summarization via LLM
+
