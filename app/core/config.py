@@ -7,8 +7,6 @@ class Settings(BaseSettings):
     SUPABASE_KEY: str
     GEMINI_API_KEY: str
     TELEGRAM_BOT_TOKEN: str
-    NOTION_API_KEY: Optional[str] = None
-    NOTION_WORKSPACE_ID: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     DEEPSEEK_API_KEY: Optional[str] = None
     NVIDIA_API_KEY: Optional[str] = None
@@ -17,6 +15,9 @@ class Settings(BaseSettings):
     NVIDIA_ALT_FALLBACK_MODEL: str = "moonshotai/kimi-k2.6"
 
     BRAVE_API_KEY: Optional[str] = None
+    
+    # Obsidian sync
+    OBSIDIAN_VAULT_PATH: str = ""  # e.g. C:/Users/you/Obsidian/Grain
 
     # App thresholds / settings
     TOPIC_SNAP_THRESHOLD: float = 0.90

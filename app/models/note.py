@@ -11,9 +11,6 @@ class NoteBase(BaseModel):
     personal_insight: Optional[str] = None
     topic_id: Optional[UUID] = None
     embedding: Optional[List[float]] = None
-    notion_page_id: Optional[str] = None
-    notion_block_id: Optional[str] = None
-    notion_last_edited: Optional[datetime] = None
     facets: Optional[Dict[str, List[str]]] = None
 
     @field_validator("embedding", mode="before")

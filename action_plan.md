@@ -206,33 +206,40 @@
 
 ---
 
-## 🔵 Phase 3 — Notion Sync Engine
+## 🔵 Phase 3 — Obsidian Export Engine (replaces Notion)
 
-> **Goal:** See your knowledge organized visually in Notion automatically.
+> **Goal:** See your knowledge organized visually in Obsidian with graph view, backlinks, and tags.
 
-- [x] **P3.1** — Setup Notion integration, create Notion workspace for Grain, get API key  
-  `Completed: 2026-05-25`
+- [x] **P3.0** — Remove Notion: delete `notion.py`, `notion_sync.py`, update config, models, queries; add drop-column migration  
+  `Completed: 2026-05-26`
 
-- [x] **P3.2** — Write `app/integrations/notion.py`:  
-  Wrappers for: `create_page()`, `append_block()`, `get_page()`, `search_pages()`, `get_block_last_edited_time()`  
-  `Completed: 2026-05-25`
+- [x] **P3.1** — Write `app/services/obsidian_sync.py`:
+  After every note save, write a `.md` file to the Obsidian vault with:
+  - YAML frontmatter: `grain_id` (6-char shortcode), `topic`, `tags[]` (status + facets), `entities[]`, `created`
+  - Body: Knowledge Card with `[[wikilinks]]` (from `links_to` and entities)
+  - File naming: `{Topic} - {Title 40chars}.md`  
+  `Completed: 2026-05-26`
 
-- [x] **P3.3** — Write `app/services/notion_sync.py`:  
-  On note save: check `notion_map` for topic page → if exists, append summary block → if not, create page  
-  `Completed: 2026-05-25`
+- [x] **P3.2** — Write index generators in `obsidian_sync.py`:
+  - `_MOC.md` — Topic-grouped Table of Contents
+  - `_entities.md` — All entities grouped by type
+  - `_facets.md` — All facet values grouped by key  
+  `Completed: 2026-05-26`
 
-- [x] **P3.4** — Save `notion_block_id` and `notion_last_edited` to `notes` table after sync  
-  `Completed: 2026-05-25`
+- [x] **P3.3** — Add Telegram edit commands in `app/api/ingest.py`:
+  - `/note <code>` — show note details
+  - `/edit <code> <text>` — full re-process via LLM
+  - `/fact <code> <fact>` — append fact (no LLM)
+  - `/retitle <code> <title>` — rename
+  - `/delete <code>` — remove
+  - Shortcodes: 6-char base62 (e.g. `aB3kZ9`), shown in capture reply  
+  `Completed: 2026-05-26`
 
-- [x] **P3.5** — Implement the **Polling Engine** (two-way sync):  
-  Background task running every 5 minutes:  
-  Fetch all `notes.notion_block_id` where `notion_last_edited` exists →  
-  Call Notion API to get current `last_edited_time` →  
-  If Notion's timestamp > Supabase's: fetch edited text, update `notes.raw_text` in Supabase  
-  `Completed: 2026-05-25`
-
-- [x] **P3.6** — Test: sync a note to Notion, edit it in Notion, wait 5 min, verify Supabase updated  
-  `Completed: 2026-05-25`
+**Setup requirements (out of scope for code):**
+- Install Obsidian on desktop/phone
+- Point Obsidian vault to `OBSIDIAN_VAULT_PATH`
+- Install Syncthing on all devices to sync `.md` files
+- Edit notes via Telegram commands — Obsidian is read-only display
 
 ---
 
@@ -305,7 +312,7 @@
 - [x] **P6.3** — Add an `enrichment_log` to track merges: `source_note_id`, `merged_at`, `old_summary`, `new_summary`  
   `Completed: 2026-05-25`
 
-- [x] **P6.4** — Update `notion_sync` to re-sync the enriched Notion block when a note is merged  
+- [x] **P6.4** — Update `obsidian_sync` to re-sync the enriched note's `.md` file when a note is merged  
   `Completed: 2026-05-25`
 
 - [x] **P6.5** — Test: save the same conceptual note twice (slightly rephrased), verify enrichment fires  

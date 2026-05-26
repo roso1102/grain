@@ -55,30 +55,6 @@ def get_topic_by_name(name: str) -> Optional[TopicSchema]:
         return None
     return TopicSchema(**result.data[0])
 
-def update_topic_notion_page(topic_id: UUID, notion_page_id: str) -> None:
-    """Updates a topic's associated Notion page ID."""
-    supabase.table("topics").update({"notion_page_id": notion_page_id}).eq("id", str(topic_id)).execute()
-
-def update_note_notion_fields(note_id: UUID, notion_page_id: str, notion_block_id: str, notion_last_edited: str) -> None:
-    """Updates the Notion sync tracking fields on a note."""
-    supabase.table("notes").update({
-        "notion_page_id": notion_page_id,
-        "notion_block_id": notion_block_id,
-        "notion_last_edited": notion_last_edited
-    }).eq("id", str(note_id)).execute()
-
-def get_syncable_notes() -> List[NoteOutput]:
-    """Retrieves all notes that have been successfully synced to Notion."""
-    result = supabase.table("notes").select("*").not_.is_("notion_block_id", "null").execute()
-    return [NoteOutput(**row) for row in result.data]
-
-def update_note_raw_text(note_id: UUID, raw_text: str, last_edited: str) -> None:
-    """Updates a note's raw text and syncs the updated Notion last_edited timestamp."""
-    supabase.table("notes").update({
-        "raw_text": raw_text,
-        "notion_last_edited": last_edited
-    }).eq("id", str(note_id)).execute()
-
 def upsert_entity(entity: EntityCreate) -> EntitySchema:
     """
     Checks if an entity with the same name already exists in the database.

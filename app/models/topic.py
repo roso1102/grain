@@ -6,7 +6,6 @@ class TopicBase(BaseModel):
     name: str
     parent_id: Optional[UUID] = None
     description: Optional[str] = None
-    notion_page_id: Optional[str] = None
     embedding: Optional[List[float]] = None
 
     @field_validator("embedding", mode="before")

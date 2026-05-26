@@ -44,8 +44,9 @@ You send text, links, files, or screenshots to a Telegram bot.
 7. Extracts named entities (concepts, projects, technologies)
 8. Creates vector embeddings (free, local model)
 9. Builds relationship edges between notes (memory graph)
-10. Syncs structured summaries to Notion
+10. Exports structured Knowledge Cards to **Obsidian** with [[wikilinks]] for graph view
 11. Makes everything semantically searchable
+12. Supports editing via Telegram commands (`/edit`, `/fact`, `/retitle`, `/delete`)
 
 ---
 
@@ -94,7 +95,7 @@ You send text, links, files, or screenshots to a Telegram bot.
     │  ├── entities                      │
     │  ├── relations (graph edges)       │
     │  ├── note_entities                 │
-    │  └── notion_map                    │
+    │  └── facets                        │
     └─────────┬──────────────────────────┘
               │
     ┌─────────▼──────────┐
@@ -117,7 +118,7 @@ You send text, links, files, or screenshots to a Telegram bot.
 | Component | Role |
 |---|---|
 | **Supabase** | The Brain — source of truth. Stores notes, vectors, graph, metadata |
-| **Notion** | The Knowledge UI — browsable, organized, human-readable |
+| **Obsidian** | The Knowledge UI — local graph view, backlinks, free |
 | **Telegram** | The Capture Pipe — frictionless input, zero context switching |
 | **FastAPI** | The Orchestrator — connects all systems |
 | **sentence-transformers** | Free local embedding model (BAAI/bge-small-en-v1.5) |
@@ -133,7 +134,7 @@ You send text, links, files, or screenshots to a Telegram bot.
 | Single vector search | Vector + Entity + Graph hybrid retrieval |
 | Topic tags = user's job | **Semantic Topic Snapping** — auto-dedup categories |
 | Link saved as-is | Link scraped, content extracted, personal note preserved |
-| No two-way sync | Notion polling for two-way edit sync |
+| No two-way sync | Telegram commands for editing + Obsidian display |
 | Paid embeddings | Local, free `sentence-transformers` |
 | Notes grow forever | Enrichment Engine merges & evolves knowledge nodes |
 
@@ -149,7 +150,7 @@ You send text, links, files, or screenshots to a Telegram bot.
 | LLM | Google Gemini Flash / Mistral | Free tier, classification & summarization |
 | Embeddings | `BAAI/bge-small-en-v1.5` (local) | **Zero cost**, runs on CPU |
 | Input | Telegram Bot API | Frictionless capture |
-| Knowledge UI | Notion API | Human-readable organization |
+| Knowledge UI | Obsidian + Syncthing | Markdown files, graph view, free |
 | Web Scraping | `httpx` + `BeautifulSoup4` | Link content extraction |
 | Hosting | Railway / Render | Simple, free tier available |
 
@@ -180,8 +181,10 @@ Supabase + pgvector + graph logic. Stores semantic and structural memory.
 Answers: "What do I know about memristor PUF?"
 Uses: vector similarity → entity overlap (LLM-extracted entities for query) → graph expansion → ranking
 
-### 6. Notion Sync Engine
-Creates/updates Notion pages from Supabase. Also runs a background **polling task** to detect Notion-side edits and write them back to Supabase. Notion's `last_edited_time` is tracked per block.
+### 6. Obsidian Export Engine
+After every note save, exports a `.md` file with YAML frontmatter to the Obsidian vault. Each file contains the Knowledge Card with `[[wikilinks]]` for graph view, `#status/` tags, and Dataview-compatible metadata.
+
+Also generates index pages: `_MOC.md` (Map of Content), `_entities.md` (entity index), `_facets.md` (facet views). The vault syncs across devices via **Syncthing** (free, P2P).
 
 ### 7. Enrichment Engine
 Before creating a new note, checks if a highly similar note already exists (similarity > 0.88). If yes, prompts LLM to rewrite the old note with the new context merged in, rather than creating a duplicate.
@@ -213,11 +216,7 @@ source_type       TEXT          -- 'telegram_text' | 'link' | 'pdf' | 'screensho
 personal_insight  TEXT          -- User's annotation attached to the note
 topic_id          UUID REFERENCES topics
 embedding         vector(384)   -- From bge-small
-importance_score  FLOAT
 created_at        TIMESTAMPTZ
-notion_page_id    TEXT
-notion_block_id   TEXT
-notion_last_edited TIMESTAMPTZ  -- For two-way sync polling
 ```
 
 ### `topics`
@@ -227,7 +226,6 @@ name              TEXT UNIQUE
 parent_id         UUID REFERENCES topics  -- Subtopics
 description       TEXT
 embedding         vector(384)
-notion_page_id    TEXT
 ```
 
 ### `entities`
@@ -254,14 +252,7 @@ relation_type   TEXT  -- 'related_to' | 'extends' | 'contradicts' | 'depends_on'
 score           FLOAT
 ```
 
-### `notion_map`
-```sql
-topic_id        UUID REFERENCES topics
-notion_page_id  TEXT
-last_sync       TIMESTAMPTZ
-```
 
----
 
 ## 📂 Project Structure
 
@@ -332,15 +323,13 @@ grain/
 │   └── integrations/
 │       ├── __init__.py
 │       ├── telegram.py            # Telegram Bot webhook handler
-│       ├── notion.py              # Notion API client wrapper
-│       └── gemini.py              # Unified LLM router (Gemini/Groq/NVIDIA)
+│       └── gemini.py              # Unified LLM router (Gemini/Groq/NVIDIA)              # Unified LLM router (Gemini/Groq/NVIDIA)
 │
 ├── tests/
 │   ├── __init__.py
 │   ├── test_ingest.py
 │   ├── test_search.py
-│   ├── test_notion_sync.py
-│   └── test_scrapers.py           # Tests for scrapers module
+│   │   └── test_scrapers.py           # Scrapers + integration tests           # Tests for scrapers module
 │
 ├── .env.example                   # Environment variable template
 ├── .gitignore

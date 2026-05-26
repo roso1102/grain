@@ -9,10 +9,10 @@ from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
 from app.services.embedder import embed
 from app.services.retrieval_engine import search_notes
-from app.services.notion_sync import sync_note_to_notion
 from app.services.relation_engine import build_relations_for_note
 from app.services.enrichment_engine import try_enrich
 from app.db.queries import insert_note
+from app.db.supabase import supabase
 from app.models.note import NoteInput
 
 router = APIRouter(tags=["Ingestion"])
@@ -37,8 +37,16 @@ async def process_telegram_ingestion(
     5. Send summary/topic confirmation back to user
     """
     try:
-        # Check if the input is a semantic search command
         clean_input = raw_input.strip()
+        
+        # ── Route Telegram commands ──────────────────────────────────────
+        if clean_input.startswith("/note") or clean_input.startswith("/edit") or \
+           clean_input.startswith("/fact") or clean_input.startswith("/retitle") or \
+           clean_input.startswith("/delete"):
+            await _handle_note_command(chat_id, clean_input)
+            return
+        
+        # Check if the input is a semantic search command
         if clean_input.startswith("/ask"):
             query = clean_input[4:].strip()
             if not query:
@@ -86,13 +94,9 @@ async def process_telegram_ingestion(
         if was_enriched and enriched_note_id:
             logger.info(f"Note merged into existing note {enriched_note_id} via enrichment.")
             # Grab Core line for compact enrichment reply
-            summary_text = parsed_data["summary"]
-            core_line = ""
-            for sl in summary_text.split("\n"):
-                sl_stripped = sl.strip()
-                if sl_stripped.startswith("**Core:**"):
-                    core_line = sl_stripped[len("**Core:**"):].strip().rstrip(".").replace("**", "")
-                    break
+            core_line = parsed_data.get("core_claim", "")
+            if core_line:
+                core_line = core_line.replace("**", "").rstrip(".")
             reply = (
                 f"🌾 *Grain Enriched!*\n\n"
                 f"Your note was merged into an existing capture on the same topic.\n"
@@ -119,11 +123,12 @@ async def process_telegram_ingestion(
         saved_note = insert_note(note_input)
         logger.info(f"Successfully saved note {saved_note.id} in Supabase.")
         
-        # 5. Sync note to Notion
+        # 5. Sync note to Obsidian
         try:
-            await sync_note_to_notion(saved_note.id, custom_title=parsed_data.get("title"))
+            from app.services.obsidian_sync import sync_note_to_obsidian
+            await sync_note_to_obsidian(saved_note.id)
         except Exception as e:
-            logger.error(f"Failed to sync note to Notion: {e}", exc_info=True)
+            logger.error(f"Failed to sync note to Obsidian: {e}", exc_info=True)
             
         # 6. Extract key entities
         try:
@@ -151,35 +156,35 @@ async def process_telegram_ingestion(
             logger.error(f"Failed to build memory graph relations: {e}", exc_info=True)
 
         # 7. Formulate response and reply to Telegram
-        summary_text = parsed_data["summary"]
-        # Show a compact version in Telegram — Core + Facts summary
-        core_line = ""
-        facts_lines = []
-        status_line = ""
-        for sl in summary_text.split("\n"):
-            sl_stripped = sl.strip()
-            if sl_stripped.startswith("**Core:**"):
-                core_line = sl_stripped[len("**Core:**"):].strip().rstrip(".")
-                # Remove bold markers for Telegram plain text
-                core_line = core_line.replace("**", "")
-            elif sl_stripped.startswith("•") or sl_stripped.startswith("-"):
-                fact = sl_stripped.lstrip("•- ").strip().replace("**", "")
-                if fact:
-                    facts_lines.append(fact)
-            elif sl_stripped.startswith("**Status:**"):
-                status_line = sl_stripped[len("**Status:**"):].strip().replace("**", "")
+        from app.services.obsidian_sync import make_shortcode
+        shortcode = make_shortcode(saved_note.id)
+        core_line = parsed_data.get("core_claim", "")
+        facts_list = parsed_data.get("facts", [])
+        why_line = parsed_data.get("why_matters")
+        status_line = parsed_data.get("status")
+
+        # Strip bold markers for Telegram plain text
+        if core_line:
+            core_line = core_line.replace("**", "").rstrip(".")
+        if why_line:
+            why_line = why_line.replace("**", "")
 
         reply = (
             f"🌾 *Grain Captured!*\n\n"
             f"📂 *Topic:* {snapped_topic_name}\n"
+            f"🆔 *ID:* `{shortcode}`\n"
         )
         if core_line:
             reply += f"🔑 *Core:* {core_line}\n\n"
-        if facts_lines:
-            for f in facts_lines[:3]:
-                reply += f"• {f}\n"
+        if facts_list:
+            for f in facts_list[:3]:
+                text = f.replace("**", "")
+                reply += f"• {text}\n"
             reply += "\n"
+        if why_line:
+            reply += f"💡 *Why This Matters:* {why_line}\n"
         if status_line:
+            status_line = status_line.replace("**", "")
             reply += f"📊 *Status:* {status_line}\n"
             
         await send_message(chat_id, reply)
@@ -211,6 +216,150 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Webhook routing error: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
+
+async def _handle_note_command(chat_id: int, text: str) -> None:
+    """
+    Handles Telegram commands for editing notes.
+    /note <shortcode>           → Show note
+    /edit <shortcode> <text>    → Replace raw_text, re-run LLM pipeline
+    /fact <shortcode> <fact>    → Append a fact, regenerate summary
+    /retitle <shortcode> <title>→ Update note title
+    /delete <shortcode>         → Delete note
+    """
+    from app.services.obsidian_sync import make_shortcode, resolve_shortcode, \
+        sync_note_to_obsidian, delete_note_from_obsidian
+    from app.db.queries import get_note_by_id
+
+    parts = text.split(maxsplit=2)
+    if len(parts) < 2:
+        await send_message(chat_id, "⚠️ Usage: `/note <ID>` or `/edit <ID> <new text>` or `/fact <ID> <new fact>`")
+        return
+
+    cmd = parts[0].lower()
+    shortcode = parts[1]
+    note_id = resolve_shortcode(shortcode)
+
+    if not note_id:
+        await send_message(chat_id, f"❌ No note found with ID `{shortcode}`")
+        return
+
+    # ── /note — show note ────────────────────────────────────────────────
+    if cmd == "/note":
+        note = get_note_by_id(note_id)
+        if not note:
+            await send_message(chat_id, f"❌ Note `{shortcode}` not found.")
+            return
+        topic_res = supabase.table("topics").select("name").eq("id", str(note.topic_id)).execute()
+        topic_name = topic_res.data[0]["name"] if topic_res.data else "General"
+
+        # Parse summary for display
+        core = ""
+        facts = []
+        status = ""
+        for line in (note.summary or "").split("\n"):
+            s = line.strip()
+            if s.startswith("**Core:**"):
+                core = s[len("**Core:**"):].strip().replace("**", "")
+            elif s.startswith("•"):
+                facts.append(s.lstrip("• ").strip().replace("**", ""))
+            elif s.startswith("**Status:**"):
+                status = s[len("**Status:**"):].strip().replace("**", "")
+
+        reply = f"📂 *Topic:* {topic_name}\n🆔 *ID:* `{shortcode}`\n"
+        if core:
+            reply += f"🔑 *Core:* {core}\n"
+        for f in facts[:3]:
+            reply += f"• {f}\n"
+        if status:
+            reply += f"📊 *Status:* {status}\n"
+        if note.source_url:
+            reply += f"🔗 [Source]({note.source_url})\n"
+        await send_message(chat_id, reply)
+        return
+
+    # ── /delete ──────────────────────────────────────────────────────────
+    if cmd == "/delete":
+        supabase.table("notes").delete().eq("id", str(note_id)).execute()
+        await delete_note_from_obsidian(note_id)
+        await send_message(chat_id, f"🗑️ Note `{shortcode}` deleted.")
+        return
+
+    # ── /retitle — just rename, no LLM ──────────────────────────────────
+    if cmd == "/retitle":
+        if len(parts) < 3:
+            await send_message(chat_id, "⚠️ Usage: `/retitle <ID> <new title>`")
+            return
+        new_title = parts[2].strip()
+        # The title isn't stored in DB — it's derived from **Core:**
+        # Instead, we update the summary by replacing the **Core:** line
+        note = get_note_by_id(note_id)
+        if note and note.summary:
+            new_summary = note.summary
+            lines = note.summary.split("\n")
+            for i, line in enumerate(lines):
+                if line.strip().startswith("**Core:**"):
+                    lines[i] = f"**Core:** {new_title}"
+                    new_summary = "\n".join(lines)
+                    break
+            supabase.table("notes").update({"summary": new_summary}).eq("id", str(note_id)).execute()
+            await sync_note_to_obsidian(note_id)
+        await send_message(chat_id, f"✏️ Note `{shortcode}` retitled to: {new_title}")
+        return
+
+    # ── /fact — append a fact without re-running LLM ─────────────────────
+    if cmd == "/fact":
+        if len(parts) < 3:
+            await send_message(chat_id, "⚠️ Usage: `/fact <ID> <new fact>`")
+            return
+        new_fact = parts[2].strip()
+        note = get_note_by_id(note_id)
+        if note and note.summary:
+            # Append fact to the Facts section
+            lines = note.summary.split("\n")
+            inserted = False
+            new_lines = []
+            in_facts = False
+            for line in lines:
+                new_lines.append(line)
+                if line.strip().startswith("**Facts:**"):
+                    in_facts = True
+                elif in_facts and line.strip().startswith("**") and not line.strip().startswith("**Facts:**"):
+                    # Insert before the next section header
+                    new_lines.insert(-1, f"• {new_fact}")
+                    inserted = True
+                    in_facts = False
+            if not inserted:
+                # Facts was the last section, append at end
+                new_lines.append(f"• {new_fact}")
+            supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).execute()
+            await sync_note_to_obsidian(note_id)
+        await send_message(chat_id, f"✅ Fact added to `{shortcode}`")
+        return
+
+    # ── /edit — full re-process ──────────────────────────────────────────
+    if cmd == "/edit" and len(parts) >= 3:
+        new_text = parts[2].strip()
+        # Re-run the full understand pipeline
+        parsed_data = await understand(new_text)
+        topic_name = parsed_data["topic_name"]
+        topic_id, snapped_topic_name = await snap_topic(topic_name)
+        note_embedding = embed(parsed_data["summary"])
+
+        supabase.table("notes").update({
+            "raw_text": parsed_data["raw_text"],
+            "summary": parsed_data["summary"],
+            "embedding": note_embedding,
+            "source_url": parsed_data.get("source_url"),
+            "source_type": parsed_data.get("source_type", "manual"),
+            "topic_id": str(topic_id),
+            "facets": parsed_data.get("facets") or {},
+        }).eq("id", str(note_id)).execute()
+
+        await sync_note_to_obsidian(note_id)
+        await send_message(chat_id, f"✅ Note `{shortcode}` updated with new content.")
+        return
+
+    await send_message(chat_id, f"⚠️ Unknown command: {cmd}")
 
 async def process_entity_extraction_bg(note_id: Any, entities: list):
     """Background task to embed and store pre-extracted entities for manually ingested notes."""
@@ -274,8 +423,9 @@ async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTask
 
         saved_note = insert_note(note_input)
         
-        # Sync note to Notion in background
-        background_tasks.add_task(sync_note_to_notion, saved_note.id, parsed_data.get("title"))
+        # Sync note to Obsidian in background
+        from app.services.obsidian_sync import sync_note_to_obsidian
+        background_tasks.add_task(sync_note_to_obsidian, saved_note.id)
         
         # Extract and link entities in background
         background_tasks.add_task(process_entity_extraction_bg, saved_note.id, parsed_data.get("entities", []))

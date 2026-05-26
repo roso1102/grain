@@ -46,22 +46,16 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         "2. TOPIC: One precise, capitalized topic name (1-3 words). Think like a library catalog.\n"
         "   Good examples: 'Cancer Research', 'VLSI Design', 'EV Batteries', 'Japanese Culture'\n\n"
         "3. TITLE: A clean, concise, clear title for this note (3-8 words, capitalized, NO markdown formatting, NO asterisks, NO links, e.g. 'KMSB Television Station' or 'Color Theory for Artists').\n\n"
-        "4. SUMMARY (Knowledge Card format):\n"
-        "   Produce a structured knowledge card with these exact sections:\n\n"
-        "   **Core:** [1 sentence — the single most important claim/finding. This is your recall anchor — if you remember nothing else, remember this.]\n\n"
-        "   **Facts:**\n"
-        "   • [Fact/argument 1 — specific, factual, names entities explicitly]\n"
-        "   • [Fact/argument 2]\n"
-        "   • [Fact/argument 3 — aim for 2-4 facts total]\n\n"
-        "   **Why This Matters:** [1 sentence — personal relevance or takeaway. Why should *you* care beyond the general importance?]\n\n"
-        "   **Status:** [Choose ONE: Established | Hypothesis | Debate | Speculative]\n\n"
-        "   **Links To:** [2-5 comma-separated related entities, concepts, or topics this connects to]\n\n"
+        "4. SUMMARY — extract these fields separately:\n"
+        "   - core_claim: 1 sentence — the single most important claim/finding. Recall anchor.\n"
+        "   - facts: array of 2-4 concise, standalone factual statements. Each must be a specific, named claim.\n"
+        "   - why_matters: 1 sentence — personal relevance or takeaway for the user.\n"
+        "   - status: one of Established | Hypothesis | Debate | Speculative — epistemic confidence level.\n"
+        "   - links_to: comma-separated list of 2-5 related entities, concepts, or topics.\n"
         "   Rules:\n"
-        "   - Be specific and factual — no vague filler like 'the article discusses' or 'this covers'.\n"
-        "   - Bold key terms with **term** syntax.\n"
-        "   - Each fact bullet is a complete, standalone statement — scannable without surrounding context.\n"
-        "   - Status reflects your epistemic confidence: is this settled knowledge, a working hypothesis, an active debate, or a speculative idea?\n"
-        "   - Links To feeds the knowledge graph — these become connection hints for related notes.\n\n"
+        "   - Be specific and factual — no vague filler like 'the article discusses'.\n"
+        "   - Name entities, people, technologies explicitly.\n"
+        "   - Bold key terms with **term** syntax.\n\n"
         "5. ENTITIES: Extract key named concepts, technologies, people, and organizations.\n\n"
         "6. FACETS: Extract structured tags for grouping and cross-linking notes. Use these keys:\n"
         "   - location: Geographic places (continents, countries, regions, cities, landmarks)\n"
@@ -74,9 +68,11 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         "  \"personal_insight\": null,\n"
         "  \"topic_name\": \"Topic Name\",\n"
         "  \"title\": \"Clear Concise Note Title\",\n"
-        "  \"summary\": \"**Core:** ...\\n**Facts:**\\n• ...\\n• ...\\n**Why This Matters:** ...\\n**Status:** Established\\n**Links To:** Entity A, Entity B\",\n"
-        "  \"status\": \"Established|Hypothesis|Debate|Speculative\",\n"
-        "  \"links_to\": \"Entity A, Entity B, Entity C\",\n"
+        "  \"core_claim\": \"Single most important finding.\",\n"
+        "  \"facts\": [\"Specific fact or argument one.\", \"Specific fact or argument two.\", \"Specific fact or argument three.\"],\n"
+        "  \"why_matters\": \"Why this is relevant to the user personally.\",\n"
+        "  \"status\": \"Established\",\n"
+        "  \"links_to\": \"Related Entity A, Related Entity B, Related Entity C\",\n"
         "  \"entities\": [{\"name\": \"Entity\", \"type\": \"concept|technology|project|person\"}],\n"
         "  \"facets\": {\"location\": [], \"subject\": [], \"category\": []}\n"
         "}"
@@ -100,11 +96,29 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         personal_insight = data.get("personal_insight")
         topic_name = data.get("topic_name") or "General"
         note_title = data.get("title")
-        summary = data.get("summary")
-        entities = data.get("entities") or []
-        facets = data.get("facets") or {}
+        core_claim = data.get("core_claim")
+        facts = data.get("facts") or []
+        why_matters = data.get("why_matters")
         note_status = data.get("status")
         links_to = data.get("links_to")
+        entities = data.get("entities") or []
+        facets = data.get("facets") or {}
+        
+        # Build the Knowledge Card summary string with guaranteed formatting
+        summary_parts = []
+        if core_claim:
+            summary_parts.append(f"**Core:** {core_claim}")
+        if facts:
+            summary_parts.append("**Facts:**")
+            for f in facts:
+                summary_parts.append(f"• {f}")
+        if why_matters:
+            summary_parts.append(f"**Why This Matters:** {why_matters}")
+        if note_status:
+            summary_parts.append(f"**Status:** {note_status}")
+        if links_to:
+            summary_parts.append(f"**Links To:** {links_to}")
+        summary = "\n".join(summary_parts)
         
         # Override topic if routing hint was provided
         if route_hint:
@@ -116,11 +130,13 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         route_hint = None
         personal_insight = None
         topic_name = "General"
-        entities = []
-        facets = {}
-        note_title = None
+        core_claim = None
+        facts = []
+        why_matters = None
         note_status = None
         links_to = None
+        entities = []
+        facets = {}
         
         # Try a quick fallback topic name
         if content_to_analyze.startswith("Title:"):
@@ -144,12 +160,20 @@ async def understand(raw_input: str) -> Dict[str, Any]:
                 if len(candidate) > 2:
                     topic_name = candidate
                     
-        # Basic summary fallback
+        # Basic summary fallback — build minimal Knowledge Card
         words = content_to_analyze.split()
         if len(words) > 30:
-            summary = " ".join(words[:30]) + "..."
+            core_claim = " ".join(words[:30]) + "..."
         else:
-            summary = content_to_analyze
+            core_claim = content_to_analyze
+        facts = []
+        why_matters = None
+        note_status = "Established"
+        links_to = None
+        summary_parts = [f"**Core:** {core_claim}"]
+        if note_status:
+            summary_parts.append(f"**Status:** {note_status}")
+        summary = "\n".join(summary_parts)
 
     # If title is still None, derive it simply
     if not note_title:
@@ -169,6 +193,9 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         "title": note_title,
         "entities": entities,
         "facets": facets,
+        "core_claim": core_claim,
+        "facts": facts,
+        "why_matters": why_matters,
         "status": note_status,
         "links_to": links_to
     }
