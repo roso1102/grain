@@ -147,3 +147,9 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 .DS_Store
+
+# AI agent metadata
+.commandcode/
+
+# ngrok request dumps
+ngrok_*.json

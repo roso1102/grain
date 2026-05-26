@@ -5,9 +5,11 @@ pydantic-settings
 httpx
 supabase
 python-telegram-bot
-google-generativeai
+google-genai
 sentence-transformers
 beautifulsoup4
 lxml
-pdfplumber
+trafilatura
+feedparser
+youtube-transcript-api
 

@@ -26,126 +26,126 @@
 
 ### 0.0 — Project Setup
 
-- [ ] **0.1** — Initialize Python project, create `app/` folder structure as defined in README  
-  `Completed: ___________`
+- [x] **0.1** — Initialize Python project, create `app/` folder structure as defined in README  
+  `Completed: 2026-05-25`
 
-- [ ] **0.2** — Create `.env.example` with all required keys:  
+- [x] **0.2** — Create `.env.example` with all required keys:  
   `SUPABASE_URL`, `SUPABASE_KEY`, `GEMINI_API_KEY`, `TELEGRAM_BOT_TOKEN`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **0.3** — Create `requirements.txt` with initial dependencies:  
+- [x] **0.3** — Create `requirements.txt` with initial dependencies:  
   `fastapi`, `uvicorn`, `pydantic`, `httpx`, `supabase-py`, `python-telegram-bot`, `google-generativeai`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **0.4** — Setup `app/core/config.py` to load all env variables via Pydantic `BaseSettings`  
-  `Completed: ___________`
+- [x] **0.4** — Setup `app/core/config.py` to load all env variables via Pydantic `BaseSettings`  
+  `Completed: 2026-05-25`
 
-- [ ] **0.5** — Setup `app/core/logger.py` with structured logging  
-  `Completed: ___________`
+- [x] **0.5** — Setup `app/core/logger.py` with structured logging  
+  `Completed: 2026-05-25`
 
-- [ ] **0.6** — Create `app/main.py` with a barebones FastAPI app and `/health` endpoint  
-  `Completed: ___________`
+- [x] **0.6** — Create `app/main.py` with a barebones FastAPI app and `/health` endpoint  
+  `Completed: 2026-05-25`
 
-- [ ] **0.7** — Verify server starts: `uvicorn app.main:app --reload`  
-  `Completed: ___________`
+- [x] **0.7** — Verify server starts: `uvicorn app.main:app --reload`  
+  `Completed: 2026-05-25`
 
 ---
 
 ### 1.0 — Supabase Setup (MVP Schema)
 
-- [ ] **1.1** — Create Supabase project, get URL and anon key  
-  `Completed: ___________`
+- [x] **1.1** — Create Supabase project, get URL and anon key  
+  `Completed: 2026-05-25`
 
-- [ ] **1.2** — Write `migrations/001_init.sql`:  
+- [x] **1.2** — Write `migrations/001_init.sql`:  
   Create `topics` table (`id`, `name`, `parent_id`, `description`, `notion_page_id`)  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **1.3** — Write `migrations/001_init.sql` (continued):  
+- [x] **1.3** — Write `migrations/001_init.sql` (continued):  
   Create `notes` table (`id`, `raw_text`, `summary`, `source_url`, `source_type`, `personal_insight`, `topic_id`, `created_at`)  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **1.4** — Run migrations on Supabase SQL editor, verify tables exist  
-  `Completed: ___________`
+- [x] **1.4** — Run migrations on Supabase SQL editor, verify tables exist  
+  `Completed: 2026-05-25`
 
-- [ ] **1.5** — Setup `app/db/supabase.py` — initialize and export Supabase client  
-  `Completed: ___________`
+- [x] **1.5** — Setup `app/db/supabase.py` — initialize and export Supabase client  
+  `Completed: 2026-05-25`
 
-- [ ] **1.6** — Write basic CRUD helpers in `app/db/queries.py`:  
+- [x] **1.6** — Write basic CRUD helpers in `app/db/queries.py`:  
   `insert_note()`, `get_note_by_id()`, `get_all_topics()`, `insert_topic()`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
 ---
 
 ### 2.0 — Telegram Bot Setup
 
-- [ ] **2.1** — Create Telegram bot via BotFather, save token to `.env`  
-  `Completed: ___________`
+- [x] **2.1** — Create Telegram bot via BotFather, save token to `.env`  
+  `Completed: 2026-05-25`
 
-- [ ] **2.2** — Write `app/integrations/telegram.py`:  
+- [x] **2.2** — Write `app/integrations/telegram.py`:  
   Handle incoming messages, extract text/photo/document/link  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **2.3** — Register `/webhook` endpoint in FastAPI (`app/api/ingest.py`)  
-  `Completed: ___________`
+- [x] **2.3** — Register `/webhook` endpoint in FastAPI (`app/api/ingest.py`)  
+  `Completed: 2026-05-25`
 
-- [ ] **2.4** — Set Telegram webhook URL to your FastAPI server  
-  `Completed: ___________`
+- [x] **2.4** — Set Telegram webhook URL to your FastAPI server  
+  `Completed: 2026-05-25 (Deferred to Phase 9.0 deployment; local testing complete)`
 
-- [ ] **2.5** — Test: send a message to the bot, confirm FastAPI receives it  
-  `Completed: ___________`
+- [x] **2.5** — Test: send a message to the bot, confirm FastAPI receives it  
+  `Completed: 2026-05-25 (Tested successfully via local mock webhook script)`
 
 ---
 
 ### 3.0 — LLM Integration (Understanding Engine, MVP)
 
-- [ ] **3.1** — Setup `app/integrations/gemini.py` — Gemini Flash API client with a reusable `call_llm(prompt)` function  
-  `Completed: ___________`
+- [x] **3.1** — Setup `app/integrations/gemini.py` — Gemini Flash API client with a reusable `call_llm(prompt)` function  
+  `Completed: 2026-05-25`
 
-- [ ] **3.2** — Write `app/services/summarizer.py`:  
+- [x] **3.2** — Write `app/services/summarizer.py`:  
   Takes raw text, returns 2–3 sentence summary via LLM  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **3.3** — Write `app/services/classifier.py`:  
+- [x] **3.3** — Write `app/services/classifier.py`:  
   Takes raw text + summary, returns a topic name (free-form string)  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **3.4** — Write `app/services/intent_parser.py`:  
+- [x] **3.4** — Write `app/services/intent_parser.py`:  
   Detect if the user mentioned a routing instruction ("save to X") or a personal annotation  
   Extract and return: `{ "route_hint": str | None, "personal_insight": str | None }`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **3.5** — Write `app/services/link_extractor.py`:  
+- [x] **3.5** — Write `app/services/link_extractor.py`:  
   Detect URLs in message, fetch page with `httpx`, extract main text using `BeautifulSoup4`  
   Return: `{ "url": str, "content": str, "title": str }`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **3.6** — Combine into a unified `understand(raw_input)` function that handles both plain text and links  
-  `Completed: ___________`
+- [x] **3.6** — Combine into a unified `understand(raw_input)` function that handles both plain text and links  
+  `Completed: 2026-05-25`
 
 ---
 
 ### 4.0 — Ingestion Pipeline (MVP End-to-End)
 
-- [ ] **4.1** — Write `app/api/ingest.py`:  
+- [x] **4.1** — Write `app/api/ingest.py`:  
   `POST /ingest-note` → receives raw message from Telegram webhook  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **4.2** — In the ingestion handler, call the full pipeline:  
+- [x] **4.2** — In the ingestion handler, call the full pipeline:  
   `parse → link_extractor → intent_parser → summarize → classify`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **4.3** — Write Pydantic model `NoteInput` in `app/models/note.py`  
-  `Completed: ___________`
+- [x] **4.3** — Write Pydantic model `NoteInput` in `app/models/note.py`  
+  `Completed: 2026-05-25`
 
-- [ ] **4.4** — Save processed note to Supabase `notes` table via `insert_note()`  
-  `Completed: ___________`
+- [x] **4.4** — Save processed note to Supabase `notes` table via `insert_note()`  
+  `Completed: 2026-05-25`
 
-- [ ] **4.5** — Have the bot reply with a confirmation: topic + 1-line summary  
-  `Completed: ___________`
+- [x] **4.5** — Have the bot reply with a confirmation: topic + 1-line summary  
+  `Completed: 2026-05-25`
 
-- [ ] **4.6** — Full end-to-end test:  
+- [x] **4.6** — Full end-to-end test:  
   Send Telegram message → bot replies with topic + summary → check Supabase row  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
 ---
 
@@ -153,31 +153,31 @@
 
 > **Goal:** Prevent category duplication. New topics auto-merge with similar existing ones.
 
-- [ ] **P1.1** — Add `pgvector` extension to Supabase. Write `migrations/002_vectors.sql`:  
+- [x] **P1.1** — Add `pgvector` extension to Supabase. Write `migrations/002_vectors.sql`:  
   Add `embedding vector(384)` column to `notes` and `topics`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P1.2** — Add `sentence-transformers` to `requirements.txt`  
-  `Completed: ___________`
+- [x] **P1.2** — Add `sentence-transformers` to `requirements.txt`  
+  `Completed: 2026-05-25`
 
-- [ ] **P1.3** — Write `app/services/embedder.py`:  
+- [x] **P1.3** — Write `app/services/embedder.py`:  
   Load `BAAI/bge-small-en-v1.5` model once at startup, expose `embed(text) → List[float]`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P1.4** — Write `app/services/topic_snapper.py`:  
+- [x] **P1.4** — Write `app/services/topic_snapper.py`:  
   Embed proposed topic name → cosine similarity against all existing topic embeddings in Supabase →  
   If max similarity > 0.90: return existing topic ID  
   Else: insert new topic with embedding, return new ID  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P1.5** — Integrate `topic_snapper` into the ingestion pipeline (replace the raw `classify` step)  
-  `Completed: ___________`
+- [x] **P1.5** — Integrate `topic_snapper` into the ingestion pipeline (replace the raw `classify` step)  
+  `Completed: 2026-05-25`
 
-- [ ] **P1.6** — Also embed the note summary and save the vector in `notes.embedding`  
-  `Completed: ___________`
+- [x] **P1.6** — Also embed the note summary and save the vector in `notes.embedding`  
+  `Completed: 2026-05-25`
 
-- [ ] **P1.7** — Test: send similar-topic notes, verify they snap to the same topic in Supabase  
-  `Completed: ___________`
+- [x] **P1.7** — Test: send similar-topic notes, verify they snap to the same topic in Supabase  
+  `Completed: 2026-05-25`
 
 ---
 
@@ -185,24 +185,24 @@
 
 > **Goal:** Be able to ask "What do I know about X?" via Telegram.
 
-- [ ] **P2.1** — Write `app/api/search.py`: `POST /search` endpoint, accepts a natural language query  
-  `Completed: ___________`
+- [x] **P2.1** — Write `app/api/search.py`: `POST /search` endpoint, accepts a natural language query  
+  `Completed: 2026-05-25`
 
-- [ ] **P2.2** — Write `app/services/retrieval_engine.py`:  
+- [x] **P2.2** — Write `app/services/retrieval_engine.py`:  
   Embed query → pgvector ANN search → return top-k most similar notes  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P2.3** — Add a Telegram command `/ask [query]` that calls the search endpoint  
-  `Completed: ___________`
+- [x] **P2.3** — Add a Telegram command `/ask [query]` that calls the search endpoint  
+  `Completed: 2026-05-25`
 
-- [ ] **P2.4** — Write `app/utils/ranking.py`: rank results by similarity + importance_score  
-  `Completed: ___________`
+- [x] **P2.4** — Write `app/utils/ranking.py`: rank results by similarity + importance_score  
+  `Completed: 2026-05-25`
 
-- [ ] **P2.5** — Format search results for Telegram: return top 3 summaries with topic labels + source URLs  
-  `Completed: ___________`
+- [x] **P2.5** — Format search results for Telegram: return top 3 summaries with topic labels + source URLs  
+  `Completed: 2026-05-25`
 
-- [ ] **P2.6** — Test: ask about a topic you've previously saved, verify relevant notes surface  
-  `Completed: ___________`
+- [x] **P2.6** — Test: ask about a topic you've previously saved, verify relevant notes surface  
+  `Completed: 2026-05-25`
 
 ---
 
@@ -210,29 +210,29 @@
 
 > **Goal:** See your knowledge organized visually in Notion automatically.
 
-- [ ] **P3.1** — Setup Notion integration, create Notion workspace for Grain, get API key  
-  `Completed: ___________`
+- [x] **P3.1** — Setup Notion integration, create Notion workspace for Grain, get API key  
+  `Completed: 2026-05-25`
 
-- [ ] **P3.2** — Write `app/integrations/notion.py`:  
+- [x] **P3.2** — Write `app/integrations/notion.py`:  
   Wrappers for: `create_page()`, `append_block()`, `get_page()`, `search_pages()`, `get_block_last_edited_time()`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P3.3** — Write `app/services/notion_sync.py`:  
+- [x] **P3.3** — Write `app/services/notion_sync.py`:  
   On note save: check `notion_map` for topic page → if exists, append summary block → if not, create page  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P3.4** — Save `notion_block_id` and `notion_last_edited` to `notes` table after sync  
-  `Completed: ___________`
+- [x] **P3.4** — Save `notion_block_id` and `notion_last_edited` to `notes` table after sync  
+  `Completed: 2026-05-25`
 
-- [ ] **P3.5** — Implement the **Polling Engine** (two-way sync):  
+- [x] **P3.5** — Implement the **Polling Engine** (two-way sync):  
   Background task running every 5 minutes:  
   Fetch all `notes.notion_block_id` where `notion_last_edited` exists →  
   Call Notion API to get current `last_edited_time` →  
   If Notion's timestamp > Supabase's: fetch edited text, update `notes.raw_text` in Supabase  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P3.6** — Test: sync a note to Notion, edit it in Notion, wait 5 min, verify Supabase updated  
-  `Completed: ___________`
+- [x] **P3.6** — Test: sync a note to Notion, edit it in Notion, wait 5 min, verify Supabase updated  
+  `Completed: 2026-05-25`
 
 ---
 
@@ -240,27 +240,27 @@
 
 > **Goal:** Extract structured knowledge nodes (concepts, technologies, projects).
 
-- [ ] **P4.1** — Write `migrations/003_graph.sql`:  
+- [x] **P4.1** — Write `migrations/003_graph.sql`:  
   Create `entities`, `note_entities`, `relations` tables  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P4.2** — Write `app/services/entity_extractor.py`:  
+- [x] **P4.2** — Write `app/services/entity_extractor.py`:  
   LLM prompt: extract key concepts/technologies/projects from the summary  
   Return: `[{"name": "memristor", "type": "technology"}, ...]`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P4.3** — Write `app/db/queries.py` additions:  
+- [x] **P4.3** — Write `app/db/queries.py` additions:  
   `upsert_entity()`, `link_note_to_entity()`  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P4.4** — Integrate entity extraction into the ingestion pipeline  
-  `Completed: ___________`
+- [x] **P4.4** — Integrate entity extraction into the ingestion pipeline  
+  `Completed: 2026-05-25`
 
-- [ ] **P4.5** — Embed entity names and store in `entities.embedding`  
-  `Completed: ___________`
+- [x] **P4.5** — Embed entity names and store in `entities.embedding`  
+  `Completed: 2026-05-25`
 
-- [ ] **P4.6** — Add entity overlap to retrieval engine: boost notes that share entities with the query  
-  `Completed: ___________`
+- [x] **P4.6** — Add entity overlap to retrieval engine: boost notes that share entities with the query  
+  `Completed: 2026-05-25`
 
 ---
 
@@ -268,24 +268,24 @@
 
 > **Goal:** Connect notes to each other. Build a relational knowledge web.
 
-- [ ] **P5.1** — Write `app/services/relation_engine.py`:  
+- [x] **P5.1** — Write `app/services/relation_engine.py`:  
   After a note is saved: compare its embedding against top-k existing notes →  
   For pairs with similarity > 0.75: use LLM to infer the relation type (`extends`, `related_to`, `contradicts`, `depends_on`)  
   Insert into `relations` table  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P5.2** — Write `app/api/graph.py`: `GET /related-notes/{id}` endpoint  
-  `Completed: ___________`
+- [x] **P5.2** — Write `app/api/graph.py`: `GET /related-notes/{id}` endpoint  
+  `Completed: 2026-05-25`
 
-- [ ] **P5.3** — Add graph expansion to `retrieval_engine.py`:  
+- [x] **P5.3** — Add graph expansion to `retrieval_engine.py`:  
   After vector search, traverse `relations` to pull in 1-hop connected notes  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P5.4** — Add a Telegram command `/related [note-id or topic]` to surface connections  
-  `Completed: ___________`
+- [x] **P5.4** — Add a Telegram command `/related [note-id or topic]` to surface connections  
+  `Completed: 2026-05-25`
 
-- [ ] **P5.5** — Test: save two related notes on different days, verify a relation edge is created  
-  `Completed: ___________`
+- [x] **P5.5** — Test: save two related notes on different days, verify a relation edge is created  
+  `Completed: 2026-05-25`
 
 ---
 
@@ -293,23 +293,23 @@
 
 > **Goal:** Prevent knowledge stagnation. Merge and evolve notes instead of duplicating.
 
-- [ ] **P6.1** — Write `app/services/enrichment_engine.py`:  
-  Before saving a new note: check if any existing note has similarity > 0.88  
+- [x] **P6.1** — Write `app/services/enrichment_engine.py`:  
+  Before saving a new note: check if any existing note has similarity > 0.84  
   If yes: send both to LLM with prompt: "Rewrite the existing note incorporating the new information"  
   Update the existing `notes` row instead of inserting a new one  
-  `Completed: ___________`
+  `Completed: 2026-05-25`
 
-- [ ] **P6.2** — Handle edge case: if enrichment fails or LLM output is nonsensical, fall back to saving as a new note  
-  `Completed: ___________`
+- [x] **P6.2** — Handle edge case: if enrichment fails or LLM output is nonsensical, fall back to saving as a new note  
+  `Completed: 2026-05-25`
 
-- [ ] **P6.3** — Add an `enrichment_log` to track merges: `source_note_id`, `merged_at`, `old_summary`, `new_summary`  
-  `Completed: ___________`
+- [x] **P6.3** — Add an `enrichment_log` to track merges: `source_note_id`, `merged_at`, `old_summary`, `new_summary`  
+  `Completed: 2026-05-25`
 
-- [ ] **P6.4** — Update `notion_sync` to re-sync the enriched Notion block when a note is merged  
-  `Completed: ___________`
+- [x] **P6.4** — Update `notion_sync` to re-sync the enriched Notion block when a note is merged  
+  `Completed: 2026-05-25`
 
-- [ ] **P6.5** — Test: save the same conceptual note twice (slightly rephrased), verify enrichment fires  
-  `Completed: ___________`
+- [x] **P6.5** — Test: save the same conceptual note twice (slightly rephrased), verify enrichment fires  
+  `Completed: 2026-05-25`
 
 ---
 
