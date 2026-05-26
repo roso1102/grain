@@ -62,13 +62,18 @@ You send text, links, files, or screenshots to a Telegram bot.
               │
     ┌─────────▼──────────┐
     │  Understanding     │
-    │  Engine (LLM)      │
-    │  ├── classify      │
+    │  Engine            │
+    │  (consolidated     │
+    │   LLM pipeline)    │
     │  ├── summarize     │
-    │  ├── extract URL   │
-    │  ├── scrape link   │
+    │  ├── classify      │
     │  ├── detect intent │
-    │  └── extract note  │
+    │  ├── extract       │
+    │  │   entities      │
+    │  ├── route links   │
+    │  │   to scrapers   │
+    │  └── extract       │
+    │      facets        │
     └─────────┬──────────┘
               │
     ┌─────────▼──────────┐
@@ -153,16 +158,17 @@ You send text, links, files, or screenshots to a Telegram bot.
 ## 🔧 Core Modules
 
 ### 1. Ingestion Engine
-Handles all incoming content. Detects: plain text, links, files, voice (later). For links, silently scrapes URL content and separates the article from any user annotation.
+Handles all incoming content. Detects: plain text, links, files, voice (later). For links, routes to the scrapers module (Jina → trafilatura → BS4 fallback chain) and separates the article from any user annotation.
 
 ### 2. Understanding Engine
-AI layer that:
-- Summarizes scraped content
+Consolidated AI pipeline that:
+- Summarizes content
+- Classifies into topic
 - Detects routing intent ("save to EV batteries")
 - Preserves personal annotations/insights
-- Classifies topic
-- Extracts entities
-- Scores importance
+- Extracts named entities
+- Extracts facets (projects, domains, statuses, sentiments)
+- Routes URLs to the appropriate scraper
 
 ### 3. Semantic Topic Snapping
 Before saving a new topic classification, the system embeds the proposed topic name and compares it to all existing topics in Supabase. If cosine similarity > 0.90, it snaps to the existing topic (no duplicate). Otherwise, creates a new topic.
@@ -172,7 +178,7 @@ Supabase + pgvector + graph logic. Stores semantic and structural memory.
 
 ### 5. Retrieval Engine
 Answers: "What do I know about memristor PUF?"
-Uses: vector similarity → graph expansion → entity overlap → ranking
+Uses: vector similarity → entity overlap (LLM-extracted entities for query) → graph expansion → ranking
 
 ### 6. Notion Sync Engine
 Creates/updates Notion pages from Supabase. Also runs a background **polling task** to detect Notion-side edits and write them back to Supabase. Notion's `last_edited_time` is tracked per block.
@@ -185,12 +191,12 @@ Before creating a new note, checks if a highly similar note already exists (simi
 ## 📡 API Endpoints
 
 ```
-POST /ingest-note          → Ingest text, link, or file from Telegram
+GET  /health               → System health check
+POST /webhook              → Telegram bot webhook receiver
+POST /ingest-note          → Ingest text, link, or file manually
 POST /search               → Semantic search across all notes
-POST /sync-notion          → Force sync a topic or note to Notion
-GET  /related-notes/{id}   → Get notes related to a given note
-GET  /topic/{name}         → Get all notes under a topic
-GET  /health               → Health check
+GET  /related-notes/{id}   → Graph traversal from a given note
+GET  /facets               → Aggregate facet values across notes
 ```
 
 ---
@@ -263,63 +269,81 @@ last_sync       TIMESTAMPTZ
 grain/
 │
 ├── app/
+│   ├── __init__.py
 │   ├── main.py                    # FastAPI app entry point
 │   │
 │   ├── core/
+│   │   ├── __init__.py
 │   │   ├── config.py              # Environment variables & settings
-│   │   ├── logger.py              # Logging setup
-│   │   └── constants.py           # Topic snap threshold, etc.
+│   │   └── logger.py              # Logging setup
 │   │
 │   ├── api/
-│   │   ├── ingest.py              # POST /ingest-note
+│   │   ├── __init__.py
+│   │   ├── health.py              # GET /health
+│   │   ├── ingest.py              # POST /webhook, POST /ingest-note
 │   │   ├── search.py              # POST /search
-│   │   ├── notion.py              # POST /sync-notion
-│   │   ├── graph.py               # GET /related-notes
-│   │   └── health.py              # GET /health
+│   │   ├── graph.py               # GET /related-notes/{id}
+│   │   └── facets.py              # GET /facets
 │   │
 │   ├── services/
-│   │   ├── classifier.py          # Topic classification (LLM)
-│   │   ├── summarizer.py          # Summarization (LLM)
-│   │   ├── embedder.py            # Local sentence-transformers
-│   │   ├── link_extractor.py      # URL scraping (httpx + BS4)
-│   │   ├── intent_parser.py       # Detect routing + personal insights
-│   │   ├── topic_snapper.py       # Semantic topic deduplication
+│   │   ├── __init__.py
+│   │   ├── understand.py          # Consolidated LLM understanding engine
+│   │   ├── embedder.py            # Local sentence-transformers (BAAI/bge-small)
 │   │   ├── entity_extractor.py    # Named entity extraction (LLM)
-│   │   ├── relation_engine.py     # Build graph edges
-│   │   ├── retrieval_engine.py    # Hybrid search (vector + graph)
+│   │   ├── topic_snapper.py       # Semantic topic deduplication
+│   │   ├── retrieval_engine.py    # Hybrid search (vector + entities + graph)
+│   │   ├── relation_engine.py     # Build graph edges between notes
 │   │   ├── enrichment_engine.py   # Merge/evolve existing notes
-│   │   └── notion_sync.py         # Notion create/append + polling
+│   │   ├── notion_sync.py         # Notion create/append + polling
+│   │   └── scrapers/              # Web scraping package
+│   │       ├── __init__.py        # URL detection + scraper router
+│   │       ├── base.py            # Abstract BaseScraper
+│   │       ├── twitter.py         # Nitter/Jina Twitter scraper
+│   │       ├── youtube.py         # YouTube transcript scraper
+│   │       ├── reddit.py          # Old Reddit/Jina scraper
+│   │       ├── rss.py             # RSS feed scraper
+│   │       ├── web.py             # Jina → trafilatura → BS4 fallback
+│   │       └── search.py          # Brave search integration
 │   │
 │   ├── db/
+│   │   ├── __init__.py
 │   │   ├── supabase.py            # Supabase client init
 │   │   ├── queries.py             # Reusable DB queries
-│   │   └── migrations/            # SQL migration files
-│   │       ├── 001_init.sql
-│   │       ├── 002_vectors.sql
-│   │       └── 003_graph.sql
+│   │   └── migrations/
+│   │       ├── 001_init.sql       # topics + notes tables
+│   │       ├── 002_vectors.sql    # pgvector + embedding columns
+│   │       ├── 003_graph.sql      # entities + note_entities + relations
+│   │       ├── 004_search.sql     # match_notes pgvector function
+│   │       ├── 005_notion_cols.sql# Notion sync tracking columns
+│   │       └── 006_facets.sql     # JSONB facets column
 │   │
 │   ├── models/
+│   │   ├── __init__.py
 │   │   ├── note.py                # Pydantic: NoteInput, NoteOutput
 │   │   ├── entity.py              # Pydantic: EntitySchema
 │   │   ├── relation.py            # Pydantic: RelationOutput
 │   │   └── topic.py               # Pydantic: TopicSchema
 │   │
 │   ├── utils/
-│   │   ├── chunker.py             # Text chunking for large inputs
+│   │   ├── __init__.py
 │   │   ├── similarity.py          # Cosine similarity helpers
 │   │   └── ranking.py             # Result ranking logic
 │   │
 │   └── integrations/
+│       ├── __init__.py
 │       ├── telegram.py            # Telegram Bot webhook handler
 │       ├── notion.py              # Notion API client wrapper
-│       └── gemini.py              # Gemini API client wrapper
+│       └── gemini.py              # Unified LLM router (Gemini/Groq/NVIDIA)
 │
 ├── tests/
+│   ├── __init__.py
 │   ├── test_ingest.py
 │   ├── test_search.py
-│   └── test_notion_sync.py
+│   ├── test_notion_sync.py
+│   └── test_scrapers.py           # Tests for scrapers module
 │
 ├── .env.example                   # Environment variable template
+├── .gitignore
 ├── requirements.txt
 ├── README.md
 ├── action_plan.md
