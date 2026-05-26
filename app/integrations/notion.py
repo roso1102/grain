@@ -93,7 +93,7 @@ def _callout_block(text: str, emoji: str = "💡") -> Dict:
         "object": "block",
         "type": "callout",
         "callout": {
-            "rich_text": _plain_rich_text(text),
+            "rich_text": _parse_inline_markdown(text),
             "icon": {"type": "emoji", "emoji": emoji}
         }
     }
@@ -105,7 +105,7 @@ def _quote_block(text: str) -> Dict:
     return {
         "object": "block",
         "type": "quote",
-        "quote": {"rich_text": _plain_rich_text(text)}
+        "quote": {"rich_text": _parse_inline_markdown(text)}
     }
 
 def _bookmark_block(url: str, caption: str = "") -> Dict:
@@ -129,47 +129,103 @@ def build_note_blocks(
     source_type: str = "manual"
 ) -> List[Dict]:
     """
-    Builds a rich, well-structured list of Notion blocks for a note.
+    Builds a rich, well-structured list of Notion blocks for a Knowledge Card.
     
-    Structure:
-        📋 Summary  (heading_2)
-        <paragraph with inline bold/italic properly formatted>
+    Parses the structured summary format and renders each section as an
+    appropriate Notion block type:
+    
+        **Core:** ...          →  quote block
+        **Facts:**             →  bulleted list items
+        **Why This Matters:**  →  callout with 💡
+        **Status:**            →  paragraph (gray italic)
+        **Links To:**          →  paragraph
+
+    Then appends:
         ---  (divider)
+        🔗 Source  (bookmark block, only if URL present)
         💡 Insight  (callout, only if present)
-        🔗 Source   (bookmark block, only if URL present)
+        Capture type tag  (gray italic)
     """
     blocks = []
 
-    # --- Summary section ---
-    blocks.append(_heading_block("📋 Summary", level=2))
+    # ── Parse Knowledge Card sections ──────────────────────────────────────
+    lines = summary.split("\n")
+    current_section = None
+    fact_items = []
 
-    # Strip any residual markdown source line we append in understand.py
-    clean_summary = summary
-    if "\n\n🔗 **Source:**" in clean_summary:
-        clean_summary = clean_summary.split("\n\n🔗 **Source:**")[0].strip()
-
-    # Split summary into sentences and render each as a paragraph with rich inline formatting
-    for para in clean_summary.split("\n"):
-        para = para.strip()
-        if not para:
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line:
             continue
-        # Strip any leading markdown bullets or stars
-        para = para.lstrip("*•-").strip()
-        if para:
-            blocks.append(_paragraph_block(_parse_inline_markdown(para)))
 
+        # Strip leading markdown bullets or stars for content detection
+        cleaned = line.lstrip("*•- ").strip()
+
+        # Detect section headers
+        if line.startswith("**Core:**"):
+            core_text = line[len("**Core:**"):].strip()
+            if core_text:
+                blocks.append(_quote_block(core_text))
+            current_section = "core"
+
+        elif line.startswith("**Facts:**"):
+            current_section = "facts"
+
+        elif line.startswith("**Why This Matters:**"):
+            # Flush any pending fact bullets
+            _flush_facts(blocks, fact_items)
+            current_section = "why"
+            matter_text = line[len("**Why This Matters:**"):].strip()
+            if matter_text:
+                blocks.append(_callout_block(matter_text, emoji="💡"))
+
+        elif line.startswith("**Status:**"):
+            current_section = "status"
+            status_text = line[len("**Status:**"):].strip()
+            if status_text:
+                blocks.append(_paragraph_block([{
+                    "type": "text",
+                    "text": {"content": status_text},
+                    "annotations": {"italic": True, "color": "gray"}
+                }]))
+
+        elif line.startswith("**Links To:**"):
+            current_section = "links"
+            links_text = line[len("**Links To:**"):].strip()
+            if links_text:
+                blocks.append(_paragraph_block([{
+                    "type": "text",
+                    "text": {"content": f"🔗 {links_text}"}
+                }]))
+
+        elif current_section == "facts" and cleaned:
+            # Collect bullet items (whether or not they have a leading bullet marker)
+            if cleaned.startswith("• ") or cleaned.startswith("- "):
+                cleaned = cleaned[2:].strip()
+            if cleaned:
+                fact_items.append(cleaned)
+
+        else:
+            # Fallback: lines not matching known sections render as plain paragraphs
+            # (e.g. lines from legacy summaries or unexpected formatting)
+            blocks.append(_paragraph_block(_parse_inline_markdown(cleaned)))
+
+    # Flush any remaining fact bullets
+    _flush_facts(blocks, fact_items)
+
+    # ── Divider ────────────────────────────────────────────────────────────
     blocks.append(_divider_block())
 
-    # --- Source link ---
+    # ── Source link ────────────────────────────────────────────────────────
     if source_url:
         blocks.append(_heading_block("🔗 Source", level=3))
         blocks.append(_bookmark_block(source_url))
 
-    # --- Personal insight ---
+    # ── Personal insight ───────────────────────────────────────────────────
     if personal_insight:
         blocks.append(_callout_block(personal_insight, emoji="💡"))
 
-    # --- Capture type tag ---
+    # ── Capture type tag ───────────────────────────────────────────────────
     type_label = {
         "link": "Captured from web link",
         "telegram_text": "Captured via Telegram",
@@ -185,6 +241,15 @@ def build_note_blocks(
     }]))
 
     return blocks
+
+
+def _flush_facts(blocks: List[Dict], fact_items: List[str]) -> None:
+    """Appends any collected fact bullets as Notion bulleted list items."""
+    if not fact_items:
+        return
+    for item in fact_items:
+        blocks.append(_bullet_block(_parse_inline_markdown(item)))
+    fact_items.clear()
 
 
 # ---------------------------------------------------------------------------

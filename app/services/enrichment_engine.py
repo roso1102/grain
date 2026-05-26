@@ -26,11 +26,22 @@ async def _merge_summaries(existing_summary: str, new_raw_text: str) -> str:
     """
     prompt = (
         "You are a knowledge curator merging two overlapping pieces of information.\n\n"
-        f"Existing knowledge:\n{existing_summary}\n\n"
-        f"New information to incorporate:\n{new_raw_text}\n\n"
-        "Rewrite the existing knowledge as a concise 2-3 sentence summary that "
-        "incorporates the new information without losing anything important. "
-        "Do not use bullet points. Output only the merged summary text."
+        f"EXISTING KNOWLEDGE (Knowledge Card format):\n{existing_summary}\n\n"
+        f"NEW INFORMATION to incorporate:\n{new_raw_text}\n\n"
+        "Rewrite the EXISTING KNOWLEDGE as a merged Knowledge Card that incorporates "
+        "the new information. Preserve the Knowledge Card structure:\n\n"
+        "**Core:** [1 sentence — the merged core claim]\n\n"
+        "**Facts:**\n"
+        "• [Consolidated facts from both sources — deduplicate, keep the best]\n"
+        "• [...]\n\n"
+        "**Why This Matters:** [1 sentence — updated relevance]\n\n"
+        "**Status:** Established | Hypothesis | Debate | Speculative\n\n"
+        "**Links To:** [merged list of related entities]\n\n"
+        "Rules:\n"
+        "- Bold key terms with **term** syntax.\n"
+        "- If status or facts changed based on new info, update them.\n"
+        "- Do NOT lose information from the existing knowledge.\n"
+        "- Output ONLY the merged Knowledge Card, no explanation."
     )
     response = await call_llm(prompt, task="enrich")
     return response.strip()

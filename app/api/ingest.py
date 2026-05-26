@@ -85,12 +85,23 @@ async def process_telegram_ingestion(
 
         if was_enriched and enriched_note_id:
             logger.info(f"Note merged into existing note {enriched_note_id} via enrichment.")
+            # Grab Core line for compact enrichment reply
+            summary_text = parsed_data["summary"]
+            core_line = ""
+            for sl in summary_text.split("\n"):
+                sl_stripped = sl.strip()
+                if sl_stripped.startswith("**Core:**"):
+                    core_line = sl_stripped[len("**Core:**"):].strip().rstrip(".").replace("**", "")
+                    break
             reply = (
                 f"🌾 *Grain Enriched!*\n\n"
                 f"Your note was merged into an existing capture on the same topic.\n"
                 f"📂 *Topic:* {snapped_topic_name}\n"
-                f"📝 *Updated Summary:* {parsed_data['summary']}\n"
             )
+            if core_line:
+                reply += f"🔑 *Core:* {core_line}\n"
+            else:
+                reply += f"📝 *Summary:* {parsed_data['summary'][:120]}\n"
             await send_message(chat_id, reply)
             return
 
@@ -140,13 +151,36 @@ async def process_telegram_ingestion(
             logger.error(f"Failed to build memory graph relations: {e}", exc_info=True)
 
         # 7. Formulate response and reply to Telegram
+        summary_text = parsed_data["summary"]
+        # Show a compact version in Telegram — Core + Facts summary
+        core_line = ""
+        facts_lines = []
+        status_line = ""
+        for sl in summary_text.split("\n"):
+            sl_stripped = sl.strip()
+            if sl_stripped.startswith("**Core:**"):
+                core_line = sl_stripped[len("**Core:**"):].strip().rstrip(".")
+                # Remove bold markers for Telegram plain text
+                core_line = core_line.replace("**", "")
+            elif sl_stripped.startswith("•") or sl_stripped.startswith("-"):
+                fact = sl_stripped.lstrip("•- ").strip().replace("**", "")
+                if fact:
+                    facts_lines.append(fact)
+            elif sl_stripped.startswith("**Status:**"):
+                status_line = sl_stripped[len("**Status:**"):].strip().replace("**", "")
+
         reply = (
             f"🌾 *Grain Captured!*\n\n"
             f"📂 *Topic:* {snapped_topic_name}\n"
-            f"📝 *Summary:* {parsed_data['summary']}\n"
         )
-        if parsed_data["personal_insight"]:
-            reply += f"💡 *Personal Insight:* {parsed_data['personal_insight']}\n"
+        if core_line:
+            reply += f"🔑 *Core:* {core_line}\n\n"
+        if facts_lines:
+            for f in facts_lines[:3]:
+                reply += f"• {f}\n"
+            reply += "\n"
+        if status_line:
+            reply += f"📊 *Status:* {status_line}\n"
             
         await send_message(chat_id, reply)
         

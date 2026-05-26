@@ -23,20 +23,30 @@ logger = logging.getLogger("grain.notion_sync")
 def _make_note_title(note) -> str:
     """
     Derives a clean, meaningful title for the per-note Notion sub-page.
-    Uses the first sentence of the summary, trimmed to 60 chars.
+    Uses the first sentence of the Core claim, trimmed to 60 chars.
     """
     summary = (note.summary or "").strip()
-    # Remove any leading emoji/bullet
+
+    # Extract the **Core:** line if present (Knowledge Card format)
+    for line in summary.split("\n"):
+        line = line.strip()
+        if line.startswith("**Core:**"):
+            core_text = line[len("**Core:**"):].strip()
+            # Strip any trailing punctuation for cleaner title
+            core_text = core_text.rstrip(".!?")
+            if core_text:
+                return core_text[:60].strip()
+            break
+
+    # Fallback: remove any leading emoji/bullet and use first sentence
     for prefix in ["🌾", "📋", "•", "-", "*"]:
         summary = summary.lstrip(prefix).strip()
 
-    # Use first sentence
     for sep in [".", "!", "?", "\n"]:
         idx = summary.find(sep)
         if 15 < idx < 80:
             return summary[:idx].strip()
 
-    # Fallback: first 60 chars
     return summary[:60].strip() or f"Note ({str(note.id)[:8]})"
 
 
