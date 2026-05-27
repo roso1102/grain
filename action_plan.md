@@ -20,7 +20,7 @@
 
 > **Goal:** Prove the end-to-end pipeline works.
 > Text-in → LLM understands → Supabase stores → Bot replies.
-> **No vectors, no Notion, no graph yet. Just the spine.**
+> **No vectors, no graph yet. Just the spine.**
 
 ---
 
@@ -57,7 +57,7 @@
   `Completed: 2026-05-25`
 
 - [x] **1.2** — Write `migrations/001_init.sql`:  
-  Create `topics` table (`id`, `name`, `parent_id`, `description`, `notion_page_id`)  
+  Create `topics` table (`id`, `name`, `parent_id`, `description`, `notion_page_id` — later dropped in 007)  
   `Completed: 2026-05-25`
 
 - [x] **1.3** — Write `migrations/001_init.sql` (continued):  
@@ -206,40 +206,21 @@
 
 ---
 
-## 🔵 Phase 3 — Obsidian Export Engine (replaces Notion)
+## 🔵 Phase 3 — Obsidian Export Engine (REMOVED 2026-05-27 — replaced by custom web dashboard)
 
-> **Goal:** See your knowledge organized visually in Obsidian with graph view, backlinks, and tags.
+> ~~**Goal:** See your knowledge organized visually in Obsidian with graph view, backlinks, and tags.~~
 
 - [x] **P3.0** — Remove Notion: delete `notion.py`, `notion_sync.py`, update config, models, queries; add drop-column migration  
   `Completed: 2026-05-26`
 
-- [x] **P3.1** — Write `app/services/obsidian_sync.py`:
-  After every note save, write a `.md` file to the Obsidian vault with:
-  - YAML frontmatter: `grain_id` (6-char shortcode), `topic`, `tags[]` (status + facets), `entities[]`, `created`
-  - Body: Knowledge Card with `[[wikilinks]]` (from `links_to` and entities)
-  - File naming: `{Topic} - {Title 40chars}.md`  
-  `Completed: 2026-05-26`
+- [x] **P3.1** — ~~Write `app/services/obsidian_sync.py`~~ (REMOVED)  
+  `Completed: 2026-05-26 · Removed: 2026-05-27`
 
-- [x] **P3.2** — Write index generators in `obsidian_sync.py`:
-  - `_MOC.md` — Topic-grouped Table of Contents
-  - `_entities.md` — All entities grouped by type
-  - `_facets.md` — All facet values grouped by key  
-  `Completed: 2026-05-26`
+- [x] **P3.2** — ~~Write index generators in `obsidian_sync.py`~~ (REMOVED)  
+  `Completed: 2026-05-26 · Removed: 2026-05-27`
 
-- [x] **P3.3** — Add Telegram edit commands in `app/api/ingest.py`:
-  - `/note <code>` — show note details
-  - `/edit <code> <text>` — full re-process via LLM
-  - `/fact <code> <fact>` — append fact (no LLM)
-  - `/retitle <code> <title>` — rename
-  - `/delete <code>` — remove
-  - Shortcodes: 6-char base62 (e.g. `aB3kZ9`), shown in capture reply  
+- [x] **P3.3** — Add Telegram edit commands in `app/api/ingest.py`: (KEPT — shortcodes still active)  
   `Completed: 2026-05-26`
-
-**Setup requirements (out of scope for code):**
-- Install Obsidian on desktop/phone
-- Point Obsidian vault to `OBSIDIAN_VAULT_PATH`
-- Install Syncthing on all devices to sync `.md` files
-- Edit notes via Telegram commands — Obsidian is read-only display
 
 ---
 
@@ -312,8 +293,8 @@
 - [x] **P6.3** — Add an `enrichment_log` to track merges: `source_note_id`, `merged_at`, `old_summary`, `new_summary`  
   `Completed: 2026-05-25`
 
-- [x] **P6.4** — Update `obsidian_sync` to re-sync the enriched note's `.md` file when a note is merged  
-  `Completed: 2026-05-25`
+- [x] **P6.4** — ~~Update `obsidian_sync` to re-sync the enriched note's `.md` file when a note is merged~~ (REMOVED 2026-05-27)  
+  `Completed: 2026-05-25 · Removed: 2026-05-27`
 
 - [x] **P6.5** — Test: save the same conceptual note twice (slightly rephrased), verify enrichment fires  
   `Completed: 2026-05-25`
@@ -447,4 +428,4 @@
 
 ---
 
-*Last updated: 2026-05-27*
+*Last updated: 2026-05-27 — Obsidian sync removed, shortcodes kept in app/utils/shortcode.py*

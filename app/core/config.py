@@ -17,9 +17,6 @@ class Settings(BaseSettings):
 
     BRAVE_API_KEY: Optional[str] = None
     
-    # Obsidian sync
-    OBSIDIAN_VAULT_PATH: str = ""  # e.g. C:/Users/you/Obsidian/Grain
-
     # App thresholds / settings
     TOPIC_SNAP_THRESHOLD: float = 0.90
     CLUSTER_THRESHOLD: float = 0.70

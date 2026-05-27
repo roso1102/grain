@@ -13,7 +13,7 @@
 This document defines the software requirements for Grain, a personal AI-powered knowledge management system. It serves as the authoritative specification for developers building the system.
 
 ### 1.2 Scope
-Grain enables a single user to capture fragmented information from multiple sources (primarily Telegram), have it automatically understood, classified, stored, and organized — with full semantic retrieval, entity-level memory, and Notion-based knowledge presentation.
+Grain enables a single user to capture fragmented information from multiple sources (primarily Telegram), have it automatically understood, classified, stored, and organized — with full semantic retrieval, entity-level memory, and a custom web dashboard as the knowledge browser. (Updated 2026-05-27: Notion and Obsidian removed in favor of custom web dashboard.)
 
 ### 1.3 Definitions
 
@@ -27,7 +27,7 @@ Grain enables a single user to capture fragmented information from multiple sour
 | **Enrichment** | Merging a new note into an existing one rather than creating a duplicate |
 | **Personal Insight** | A user annotation attached to a shared link or note (e.g., "this might be true in 30 yrs") |
 | **Source of Truth** | Supabase. All canonical data lives here. |
-| **Knowledge UI** | Notion. A read/write view layer on top of Supabase data. |
+| **Knowledge UI** | Custom web dashboard. The primary browse/edit/search UI on top of Supabase data. |
 
 ---
 
@@ -37,7 +37,7 @@ Grain enables a single user to capture fragmented information from multiple sour
 Grain is a personal system with a single user (the owner/developer). It is not a SaaS product. It operates as a backend service that bridges:
 
 ```
-User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
+User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Web Dashboard (UI)
 ```
 
 ### 2.2 User Characteristics
@@ -45,14 +45,14 @@ User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
 - Captures knowledge in short bursts across domains (VLSI, ML, EVs, Japanese, GATE)
 - Expects zero friction: send → forget, Grain handles the rest
 - Expects to query back: "What do I know about X?"
-- Expects Notion to reflect captured knowledge, and edits in Notion to persist
+- Expects dashboard to reflect captured knowledge, and edits in dashboard to persist
 
 ### 2.3 Constraints
 - **Cost:** No paid embedding APIs. Embeddings must run locally using `sentence-transformers`.
 - **LLM:** Prefer Google Gemini free tier (Flash). Mistral as fallback.
 - **Input Channel:** Primary input is Telegram Bot.
 - **Storage:** Supabase (PostgreSQL + pgvector).
-- **UI:** Notion (not a custom web dashboard — at least in Phase 1-7).
+- **UI:** Custom web dashboard (replaces Notion/Obsidian — Phase 11).
 
 ---
 
@@ -161,23 +161,18 @@ User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
 
 ---
 
-### 3.6 Notion Sync Engine
+### 3.6 Web Dashboard (Phase 11 — custom, replaces Notion/Obsidian)
 
-#### FR-NOT-01: Auto Page Creation
-- When a note is saved under a new topic, the system SHALL automatically create a Notion page for that topic.
-- When a note is saved under an existing topic, the system SHALL append the summary as a new block to the existing Notion page.
+> The custom web dashboard is the primary browse/edit/search UI. All data is served by the backend API and scoped per-user.
+> Detailed specification: see `graindash.md`.
 
-#### FR-NOT-02: Notion Block Tracking
-- The system SHALL store `notion_block_id` and `notion_last_edited` in the `notes` table for every block synced to Notion.
+#### FR-DASH-01: REST API Access
+- All dashboard data SHALL be served through the backend REST API (`/dashboard/*` endpoints).
+- The dashboard SHALL never access Supabase directly.
 
-#### FR-NOT-03: Two-Way Sync (Polling)
-- A background task SHALL run every 5 minutes.
-- It SHALL compare `notes.notion_last_edited` against the current Notion block `last_edited_time` via the Notion API.
-- If Notion's timestamp is newer: the edited text SHALL be fetched and written back to `notes.raw_text` in Supabase.
-
-#### FR-NOT-04: Notion Is Not the Source of Truth
-- All queries, graph operations, and ML functions SHALL operate against Supabase, not Notion.
-- Notion is strictly a presentation and two-way editing layer.
+#### FR-DASH-02: User Isolation
+- All dashboard endpoints SHALL filter data by `user_id` extracted from the session JWT.
+- No data from other users SHALL be accessible.
 
 ---
 
@@ -235,7 +230,6 @@ User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
 | End-to-end ingestion time (text) | < 5 seconds |
 | End-to-end ingestion time (link) | < 10 seconds |
 | Search query response time | < 3 seconds |
-| Notion polling interval | Every 5 minutes |
 | Embedding generation (local) | < 200ms per note |
 
 ### 4.2 Reliability
@@ -295,7 +289,6 @@ User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
 |---|---|---|
 | `/ingest-note` | POST | Ingest a note programmatically |
 | `/search` | POST | Semantic search |
-| `/sync-notion` | POST | Force sync topic/note to Notion |
 | `/related-notes/{id}` | GET | Get related notes by ID |
 | `/topic/{name}` | GET | Get all notes under a topic |
 | `/health` | GET | Service health check |
@@ -304,9 +297,9 @@ User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
 - All database interactions SHALL use `supabase-py` client.
 - Raw SQL for vector operations (pgvector ANN) SHALL be issued via `supabase.rpc()`.
 
-### 6.4 Notion Interface
-- All Notion interactions SHALL use the official Notion REST API via `httpx`.
-- The integration SHALL require a Notion Internal Integration token with read/write access to the Grain workspace.
+### 6.4 Web Dashboard Interface
+- The custom web dashboard SHALL communicate with Grain backend exclusively via the `/dashboard/*` REST API endpoints.
+- Auth SHALL use JWT sessions (Supabase Auth).
 
 ---
 
@@ -315,17 +308,14 @@ User (Telegram) ↔ FastAPI ↔ Supabase (Brain) ↔ Notion (UI)
 - Supabase provides stable pgvector support.
 - Gemini Flash free tier remains available.
 - Telegram Bot API webhooks work on the chosen hosting platform.
-- User has stable internet for Notion polling and LLM calls.
 - The `BAAI/bge-small-en-v1.5` model is compatible with the deployment environment's CPU.
 
 ---
 
 ## 8. Out of Scope (v1.0)
 
-- Multi-user support
+- Multi-user support (added in Phase 10)
 - Voice note transcription (Telegram voice messages)
-- Web dashboard / custom frontend
-- Real-time Notion webhooks (polling used instead)
 - Mobile app
 - Browser extension (planned for later)
 

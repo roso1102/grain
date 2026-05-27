@@ -228,19 +228,12 @@ async def update_note(
     if not note:
         return {"error": "Note not found"}
 
-    allowed = {"title", "summary", "topic_id", "facets", "source_url", "source_type"}
+    allowed = {"title", "summary", "topic_id", "facets", "source_url", "source_type", "personal_insight"}
     update_data = {k: v for k, v in updates.items() if k in allowed}
     if not update_data:
         return {"error": "No valid fields to update"}
 
     supabase.table("notes").update(update_data).eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
-
-    # Re-sync Obsidian
-    try:
-        from app.services.obsidian_sync import sync_note_to_obsidian
-        await sync_note_to_obsidian(note_id, user_id=user_id)
-    except Exception as e:
-        logger.warning(f"Obsidian sync failed during dashboard update: {e}")
 
     return {"status": "updated", "note_id": str(note_id)}
 
@@ -256,12 +249,6 @@ async def delete_note(
         return {"error": "Note not found"}
 
     supabase.table("notes").delete().eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
-
-    try:
-        from app.services.obsidian_sync import delete_note_from_obsidian
-        await delete_note_from_obsidian(note_id, user_id=user_id)
-    except Exception as e:
-        logger.warning(f"Obsidian delete failed during dashboard delete: {e}")
 
     return {"status": "deleted", "note_id": str(note_id)}
 
@@ -333,6 +320,35 @@ async def get_topic_notes(
         })
 
     return {"notes": notes, "total": total, "page": page, "per_page": per_page}
+
+
+@router.put("/topics/{topic_id}")
+async def update_topic(
+    topic_id: UUID,
+    updates: Dict[str, Any],
+    user_id: UUID = Depends(get_current_user),
+):
+    """Updates topic name and/or description. Scoped to user."""
+    uid = str(user_id)
+    tid = str(topic_id)
+
+    existing = supabase.table("topics")\
+        .select("id")\
+        .eq("id", tid)\
+        .eq("user_id", uid)\
+        .execute()
+
+    if not existing.data:
+        return {"error": "Topic not found"}
+
+    allowed = {"name", "description"}
+    update_data = {k: v for k, v in updates.items() if k in allowed}
+    if not update_data:
+        return {"error": "No valid fields to update"}
+
+    supabase.table("topics").update(update_data).eq("id", tid).eq("user_id", uid).execute()
+
+    return {"status": "updated", "topic_id": tid}
 
 
 # ── Entities ──────────────────────────────────────────────────────────────

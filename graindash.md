@@ -1,6 +1,6 @@
 # GrainDash — Web Dashboard Specification
 
-> Obsidian-inspired knowledge browser for Grain PKOS.
+> Obsidian-inspired knowledge browser for Grain PKOS. (Updated 2026-05-27: Obsidian/Notion sync removed — this custom web dashboard is the primary UI.)
 > Separate SvelteKit (or Next.js) repo. Communicates with Grain backend via REST API.
 > Auth via Telegram Login Widget — no email/password.
 
@@ -262,7 +262,7 @@ relations table:
   - Option to edit topic name, set parent
 - **Search:** Filter topics by name
 
-**Style:** Split-panel (inspired by Obsidian's folder pane). Tree nodes with chevrons. Notes listed below.
+**Style:** Split-panel (inspired by Obsidian's folder pane). Tree nodes with chevrons on left, notes listed on right.
 
 ### 5. Note Detail (`/notes/{id}`)
 
@@ -271,7 +271,7 @@ relations table:
 **Content:**
 - Full Knowledge Card (as described above)
 - **Linked entities section:** Tags/badges for each entity linked to this note, grouped by type
-- **Backlinks panel:** Other notes that reference this note (from `relations` table where this note is the target + from Obsidian-style `[[wikilinks]]` in note summaries)
+- **Backlinks panel:** Other notes that reference this note (from `relations` table where this note is the target) with Obsidian-style `[[wikilinks]]` in note summaries
 - **Graph preview:** Small inline force-directed graph showing this note + its 1-hop neighbors
 - **Inline edit buttons:** Edit title, edit summary, add fact, change status, move topic
 - **Delete button:** With confirmation dialog
@@ -364,7 +364,6 @@ relations table:
 **Content:**
 - Profile info (from Telegram — read-only)
 - Theme toggle (dark/light — currently dark only, prepare for light theme support)
-- Obsidian vault path (if configurable)
 - Notification preferences (future)
 - Logout button
 

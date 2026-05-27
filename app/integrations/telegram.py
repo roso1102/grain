@@ -97,7 +97,7 @@ def grain_keyboard() -> ReplyKeyboardMarkup:
 # ── Inline Keyboards (buttons on messages) ───────────────────────────────────
 
 def note_buttons(shortcode: str) -> InlineKeyboardMarkup:
-    """Returns inline buttons for a note card. (No URL buttons — Telegram blocks obsidian://)"""
+    """Returns inline buttons for a note card."""
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("📖 View", callback_data=f"note:{shortcode}"),

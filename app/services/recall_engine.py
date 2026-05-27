@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional
 from uuid import UUID
 
 from app.services.retrieval_engine import search_notes
-from app.services.obsidian_sync import make_shortcode
+from app.utils.shortcode import make_shortcode
 from app.integrations.gemini import call_llm
 from app.db.supabase import supabase
 from app.utils.similarity import normalize_similarity

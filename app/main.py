@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.core.logger import logger
 from app.core.config import settings
 from app.api import health, ingest, search, graph, facets, auth, dashboard
@@ -8,6 +9,17 @@ app = FastAPI(
     title="Grain - Personal Knowledge Operating System",
     description="An AI-powered PKOS for capturing, structuring, connecting, and recall of knowledge.",
     version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://higrain.vercel.app",
+        "http://localhost:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include API Routers

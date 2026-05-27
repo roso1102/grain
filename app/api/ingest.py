@@ -144,18 +144,13 @@ async def process_telegram_ingestion(
         logger.info(f"[TIMING] insert_note() took {time.time()-t4:.1f}s")
 
         # ── Build capture reply → send instantly (user sees result < 2s) ─
-        from app.services.obsidian_sync import make_shortcode, _note_filename
-        from urllib.parse import quote
+        from app.utils.shortcode import make_shortcode
         shortcode = make_shortcode(saved_note.id)
         core_line = parsed_data.get("core_claim", "")
         facts_list = parsed_data.get("facts", [])
         why_line = parsed_data.get("why_matters")
         status_line = parsed_data.get("status")
         title = parsed_data.get("title", "")
-
-        # Build Obsidian deep link (as plain text — Telegram blocks obsidian:// in buttons)
-        vault_name = settings.OBSIDIAN_VAULT_PATH.rstrip("/\\").split("\\")[-1].split("/")[-1]
-        md_filename = _note_filename(snapped_topic_name, title or core_line or "Untitled")
 
         if core_line:
             core_line = core_line.replace("**", "").rstrip(".")
@@ -204,21 +199,10 @@ async def process_telegram_ingestion(
             )
         reply += onboarding
 
-        # Add Obsidian link as plain text (clickable on mobile, copy-paste on desktop)
-        reply += f"\n\n📄 `obsidian://open?vault={vault_name}&file=Grain/{quote(md_filename, safe='')}`"
-
         await send_note_card(chat_id, reply, shortcode)
         logger.info(f"[TIMING] Reply sent at {time.time()-t0:.1f}s — user gets instant feedback")
 
-        # ── Background: syncing, entities, relations (user doesn't wait) ─
-        t5 = time.time()
-        try:
-            from app.services.obsidian_sync import sync_note_to_obsidian
-            await sync_note_to_obsidian(saved_note.id, user_id=user_id)
-        except Exception as e:
-            logger.error(f"Obsidian sync failed: {e}")
-        logger.info(f"[TIMING] obsidian_sync() took {time.time()-t5:.1f}s (background)")
-
+        # ── Background: entities, relations (user doesn't wait) ─
         t6 = time.time()
         try:
             from app.db.queries import upsert_entity, link_note_to_entity
@@ -429,7 +413,7 @@ async def _send_help(chat_id: int) -> None:
         "`/retitle <ID> <title>` — Change the title\n"
         "`/status <ID> <value>` — Set status (Established, Hypothesis, Debate, Speculative)\n"
         "`/move <ID> <topic>` — Change topic\n"
-        "`/delete <ID>` — Delete note + Obsidian file\n"
+        "`/delete <ID>` — Delete note\n"
         "`/recent [N]` — Show last N notes (default 10)\n"
         "`/help` — Show this message\n\n"
         "_Tip: shortcodes are 6-char IDs shown on capture_"
@@ -445,10 +429,10 @@ async def _send_help(chat_id: int) -> None:
 async def _handle_ask_command(chat_id: int, query: str, user_id: Optional[UUID] = None) -> None:
     """Semantic search via LLM re-ranker, formatted for Telegram."""
     from app.services.retrieval_engine import search_notes
-    from app.services.obsidian_sync import make_shortcode
+    from app.utils.shortcode import make_shortcode
     from uuid import UUID
 
-    results = await search_notes(query, limit=5, threshold=0.2)
+    results = await search_notes(query, limit=5, threshold=0.2, user_id=user_id)
     if not results:
         await send_message(chat_id, f"🔍 No matching notes found for: '{query}'")
         return
@@ -488,7 +472,7 @@ async def _handle_think_command(chat_id: int, question: str, user_id: Optional[U
 
 
 async def _handle_recent_command(chat_id: int, count: int, user_id: Optional[UUID] = None) -> None:
-    from app.services.obsidian_sync import make_shortcode as mk_shortcode
+    from app.utils.shortcode import make_shortcode as mk_shortcode
     from uuid import UUID
     query = supabase.table("notes").select("id, title, created_at").order("created_at", desc=True).limit(count)
     if user_id:
@@ -519,8 +503,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
     /retitle <shortcode> <title>→ Update note title
     /delete <shortcode>         → Delete note
     """
-    from app.services.obsidian_sync import make_shortcode, resolve_shortcode, \
-        sync_note_to_obsidian, delete_note_from_obsidian, _note_filename, vault_dir
+    from app.utils.shortcode import make_shortcode, resolve_shortcode
     from app.db.queries import get_note_by_id
 
     # ── /ask — requires query, not shortcode ─────────────────────────────
@@ -570,14 +553,14 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
         if not query:
             await send_message(chat_id, "⚠️ Please provide a query (e.g. `/ask cuckoo bird`)")
             return
-        await _handle_ask_command(chat_id, query)
+        await _handle_ask_command(chat_id, query, user_id=user_id)
         return
     if lower.startswith("/think "):
         query = text[6:].strip()
         if not query:
             await send_message(chat_id, "⚠️ Please provide a question (e.g. `/think How does ODAS relate to EV range?`)")
             return
-        await _handle_think_command(chat_id, query)
+        await _handle_think_command(chat_id, query, user_id=user_id)
         return
     if lower == "/recent" or lower.startswith("/recent "):
         parts_r = text.split(maxsplit=1)
@@ -588,7 +571,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
             except ValueError:
                 pass
         count = min(count, 30)
-        await _handle_recent_command(chat_id, count)
+        await _handle_recent_command(chat_id, count, user_id=user_id)
         return
 
     parts = text.split(maxsplit=2)
@@ -606,7 +589,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
 
     # ── /note — show note ────────────────────────────────────────────────
     if cmd == "/note":
-        note = get_note_by_id(note_id)
+        note = get_note_by_id(note_id, user_id=user_id)
         if not note:
             await send_message(chat_id, f"❌ Note `{shortcode}` not found.")
             return
@@ -640,8 +623,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
 
     # ── /delete ──────────────────────────────────────────────────────────
     if cmd == "/delete":
-        supabase.table("notes").delete().eq("id", str(note_id)).execute()
-        await delete_note_from_obsidian(note_id, user_id=user_id)
+        supabase.table("notes").delete().eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
         await send_message(chat_id, f"🗑️ Note `{shortcode}` deleted.")
         return
 
@@ -651,8 +633,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
             await send_message(chat_id, "⚠️ Usage: `/retitle <ID> <new title>`")
             return
         new_title = parts[2].strip()
-        supabase.table("notes").update({"title": new_title}).eq("id", str(note_id)).execute()
-        await sync_note_to_obsidian(note_id, user_id=user_id)
+        supabase.table("notes").update({"title": new_title}).eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
         await send_message(chat_id, f"✏️ Note `{shortcode}` retitled to: {new_title}")
         return
 
@@ -662,7 +643,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
             await send_message(chat_id, "⚠️ Usage: `/fact <ID> <new fact>`")
             return
         new_fact = parts[2].strip()
-        note = get_note_by_id(note_id)
+        note = get_note_by_id(note_id, user_id=user_id)
         if note and note.summary:
             # Append fact to the Facts section
             lines = note.summary.split("\n")
@@ -681,8 +662,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
             if not inserted:
                 # Facts was the last section, append at end
                 new_lines.append(f"• {new_fact}")
-            supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).execute()
-            await sync_note_to_obsidian(note_id, user_id=user_id)
+            supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
         await send_message(chat_id, f"✅ Fact added to `{shortcode}`")
         return
 
@@ -694,22 +674,8 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
         note_embedding = await embed(parsed_data["summary"])
 
         # Preserve original topic ID — don't re-snap (edit = content change, not topic change)
-        existing_note = get_note_by_id(note_id)
+        existing_note = get_note_by_id(note_id, user_id=user_id)
         original_topic_id = str(existing_note.topic_id) if existing_note and existing_note.topic_id else None
-        original_title = existing_note.title if existing_note else ""
-
-        # Delete the old .md file before re-syncing (title may have changed → different filename)
-        if original_topic_id and original_title:
-            try:
-                t_res = supabase.table("topics").select("name").eq("id", original_topic_id).execute()
-                old_topic_name = t_res.data[0]["name"] if t_res.data else "General"
-                old_filename = _note_filename(old_topic_name, original_title)
-                old_path = vault_dir() / old_filename
-                if old_path.exists():
-                    old_path.unlink()
-                    logger.info(f"Deleted old file {old_filename} before edit re-sync")
-            except Exception as e:
-                logger.warning(f"Failed to delete old file before edit: {e}")
 
         update_data = {
             "raw_text": parsed_data["raw_text"],
@@ -723,9 +689,8 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
         if original_topic_id:
             update_data["topic_id"] = original_topic_id
 
-        supabase.table("notes").update(update_data).eq("id", str(note_id)).execute()
+        supabase.table("notes").update(update_data).eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
 
-        await sync_note_to_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"✅ Note `{shortcode}` updated with new content.")
         return
 
@@ -739,7 +704,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
         if new_status not in valid:
             await send_message(chat_id, f"⚠️ Invalid status. Use: {', '.join(valid)}")
             return
-        note = get_note_by_id(note_id)
+        note = get_note_by_id(note_id, user_id=user_id)
         if not note or not note.summary:
             await send_message(chat_id, f"❌ Note `{shortcode}` not found or has no summary.")
             return
@@ -755,8 +720,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
                 new_lines.append(line)
         if not replaced:
             new_lines.append(f"\n**Status:** {new_status}")
-        supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).execute()
-        await sync_note_to_obsidian(note_id, user_id=user_id)
+        supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
         await send_message(chat_id, f"📊 Status for `{shortcode}` set to: {new_status}")
         return
 
@@ -767,8 +731,7 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
             return
         new_topic = parts[2].strip()
         topic_id, snapped_name = await snap_topic(new_topic, user_id=user_id)
-        supabase.table("notes").update({"topic_id": str(topic_id)}).eq("id", str(note_id)).execute()
-        await sync_note_to_obsidian(note_id, user_id=user_id)
+        supabase.table("notes").update({"topic_id": str(topic_id)}).eq("id", str(note_id)).eq("user_id", str(user_id)).execute()
         await send_message(chat_id, f"📂 Note `{shortcode}` moved to topic: {snapped_name}")
         return
 
@@ -849,10 +812,6 @@ async def ingest_note(
             }
 
         saved_note = insert_note(note_input)
-        
-        # Sync note to Obsidian in background
-        from app.services.obsidian_sync import sync_note_to_obsidian
-        background_tasks.add_task(sync_note_to_obsidian, saved_note.id, user_id)
         
         # Extract and link entities in background
         background_tasks.add_task(process_entity_extraction_bg, saved_note.id, parsed_data.get("entities", []), user_id)
