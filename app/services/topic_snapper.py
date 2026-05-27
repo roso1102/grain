@@ -80,7 +80,7 @@ async def snap_topic(
                 logger.warning(f"Failed to create broader topic '{bt_clean}': {e}")
 
     # 1. Embed proposed topic name
-    proposed_embedding = embed(proposed_name_clean)
+    proposed_embedding = await embed(proposed_name_clean)
 
     # 2. Get all existing topics
     try:

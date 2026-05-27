@@ -206,7 +206,7 @@ async def process_telegram_ingestion(
                 ent_name = ent.get("name")
                 ent_type = ent.get("type")
                 if ent_name and ent_type:
-                    ent_emb = embed(ent_name)
+                    ent_emb = await embed(ent_name)
                     entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb))
                     link_note_to_entity(saved_note.id, entity_schema.id)
         except Exception as e:
@@ -612,7 +612,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
         new_text = parts[2].strip()
         # Re-run the LLM pipeline
         parsed_data = await understand(new_text)
-        note_embedding = embed(parsed_data["summary"])
+        note_embedding = await embed(parsed_data["summary"])
 
         # Preserve original topic ID — don't re-snap (edit = content change, not topic change)
         existing_note = get_note_by_id(note_id)
@@ -709,7 +709,7 @@ async def process_entity_extraction_bg(note_id: Any, entities: list):
             ent_name = ent.get("name")
             ent_type = ent.get("type")
             if ent_name and ent_type:
-                ent_emb = embed(ent_name)
+                ent_emb = await embed(ent_name)
                 entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb))
                 link_note_to_entity(note_id, entity_schema.id)
     except Exception as e:
@@ -728,7 +728,7 @@ async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTask
         topic_id, snapped_topic_name = await snap_topic(topic_name)
         
         # Generate summary embedding
-        note_embedding = embed(parsed_data["summary"])
+        note_embedding = await embed(parsed_data["summary"])
             
         note_input = NoteInput(
             raw_text=parsed_data["raw_text"],
