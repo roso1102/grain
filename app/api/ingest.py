@@ -11,6 +11,7 @@ from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
 from app.services.embedder import embed
 from app.services.retrieval_engine import search_notes
+from app.db.users import get_or_create_user_by_chat_id
 from app.services.relation_engine import build_relations_for_note
 from app.services.enrichment_engine import try_enrich
 from app.db.queries import insert_note
@@ -29,7 +30,8 @@ async def process_telegram_ingestion(
     chat_id: int, 
     raw_input: str, 
     source_type: str, 
-    file_id: Optional[str] = None
+    file_id: Optional[str] = None,
+    user_id: Optional[Any] = None,
 ):
     """
     Background worker that runs the full ingestion pipeline:
@@ -361,12 +363,21 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         chat_id, text, source_type, file_id = parse_webhook_update(payload)
         
         if chat_id is not None and text:
+            # Phase 0: resolve user identity at webhook entry
+            try:
+                user = get_or_create_user_by_chat_id(chat_id)
+                user_id = user.id
+            except Exception as e:
+                logger.warning(f"Failed to resolve user for chat_id {chat_id}: {e}")
+                user_id = None
+
             background_tasks.add_task(
                 process_telegram_ingestion,
                 chat_id=chat_id,
                 raw_input=text,
                 source_type=source_type,
-                file_id=file_id
+                file_id=file_id,
+                user_id=user_id
             )
             
         return {"status": "ok"}
