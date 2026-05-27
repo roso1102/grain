@@ -60,21 +60,20 @@ async def call_llm(prompt: str, task: str = "general") -> str:
         Falls back to Groq LLaMA 70B (llama-3.3-70b-versatile) for high-quality reasoning.
         Falls back to Gemini 2.5 Flash as final API safeguard.
     """
-    # 1. Groq (Preferred for lightweight classification/parsing tasks)
-    use_groq = task in ("intent", "classify", "relations", "entities") and settings.GROQ_API_KEY
-    if use_groq:
+    # 1. Groq 70B (Fastest for understanding tasks)
+    if settings.GROQ_API_KEY and task in ("understand", "general", "intent", "classify", "relations", "entities"):
         try:
-            logger.info(f"Routing task '{task}' to Groq (llama-3.1-8b-instant)...")
+            logger.info(f"Routing task '{task}' to Groq (llama-3.3-70b-versatile)...")
             return await call_openai_compatible(
                 url="https://api.groq.com/openai/v1/chat/completions",
                 api_key=settings.GROQ_API_KEY,
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 prompt=prompt
             )
         except Exception as e:
-            logger.warning(f"Groq task '{task}' failed ({e}). Falling back to Gemini...")
+            logger.warning(f"Groq 70B failed ({e}). Falling back...")
 
-    # 2. NVIDIA Build (Preferred for heavy comprehension tasks)
+    # 2. NVIDIA Build
     use_nvidia = task in ("understand", "general") and settings.NVIDIA_API_KEY
     if use_nvidia:
         try:
@@ -87,20 +86,14 @@ async def call_llm(prompt: str, task: str = "general") -> str:
                 prompt=prompt
             )
         except Exception as e:
-            logger.warning(f"Primary NVIDIA model '{model}' failed ({e}). Falling back to Groq...")
+            logger.warning(f"NVIDIA Build failed ({e}). Falling back...")
 
-    # 3. Groq 70B Fallback (Premium reasoning, extremely fast and reliable fallback)
-    if settings.GROQ_API_KEY and task in ("understand", "general"):
-        try:
-            logger.info(f"Routing task '{task}' to Groq Fallback (llama-3.3-70b-versatile)...")
-            return await call_openai_compatible(
-                url="https://api.groq.com/openai/v1/chat/completions",
-                api_key=settings.GROQ_API_KEY,
-                model="llama-3.3-70b-versatile",
-                prompt=prompt
-            )
-        except Exception as e:
-            logger.warning(f"Groq fallback failed ({e}). Falling back to direct DeepSeek or Gemini...")
+    # 3. Gemini fallback
+    try:
+        logger.info(f"Routing task '{task}' to Gemini (gemini-2.5-flash)...")
+        return await call_gemini(prompt)
+    except Exception as e:
+        logger.warning(f"Gemini failed ({e}). Final fallback to Groq 8B...")
 
     # 4. Direct DeepSeek API (Alternative direct endpoint if configured)
     use_deepseek = task in ("understand", "general") and settings.DEEPSEEK_API_KEY

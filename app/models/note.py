@@ -6,6 +6,7 @@ from uuid import UUID
 class NoteBase(BaseModel):
     raw_text: str
     summary: Optional[str] = None
+    title: Optional[str] = None
     source_url: Optional[str] = None
     source_type: Optional[str] = None
     personal_insight: Optional[str] = None

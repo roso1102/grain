@@ -348,21 +348,21 @@
 
 > **Goal:** Ask complex questions. Get back connected, reasoned answers.
 
-- [ ] **P8.1** — Implement a conversation mode in Telegram: `/think [complex question]`  
-  `Completed: ___________`
+- [x] **P8.1** — Implement a conversation mode in Telegram: `/think [complex question]`  
+  `Completed: 2026-05-26`
 
-- [ ] **P8.2** — Retrieval: use hybrid search (vectors + entity match + graph traversal) to gather context  
-  `Completed: ___________`
+- [x] **P8.2** — Retrieval: use hybrid search (vectors + entity match + graph traversal) to gather context  
+  `Completed: 2026-05-26`
 
-- [ ] **P8.3** — Send gathered context + question to LLM:  
+- [x] **P8.3** — Send gathered context + question to LLM:  
   "Based on the user's saved knowledge, answer: [question]"  
-  `Completed: ___________`
+  `Completed: 2026-05-26`
 
-- [ ] **P8.4** — Return the answer with citations (which notes were used, topic labels, source URLs)  
-  `Completed: ___________`
+- [x] **P8.4** — Return the answer with citations (which notes were used, topic labels, source URLs)  
+  `Completed: 2026-05-26`
 
-- [ ] **P8.5** — Test: ask "What connects ODAS and EV range estimation?" — verify cross-domain answer  
-  `Completed: ___________`
+- [x] **P8.5** — Test: ask "What connects ODAS and EV range estimation?" — verify cross-domain answer  
+  `Completed: 2026-05-26`
 
 ---
 

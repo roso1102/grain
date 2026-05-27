@@ -43,8 +43,9 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         "1. INTENT (from Original User Message only):\n"
         "   - route_hint: If user explicitly says 'save to X', 'put in X', 'topic: X' → extract X. Otherwise null.\n"
         "   - personal_insight: If user adds their own thoughts/comments alongside a link → extract it. Otherwise null.\n\n"
-        "2. TOPIC: One precise, capitalized topic name (1-3 words). Think like a library catalog.\n"
-        "   Good examples: 'Cancer Research', 'VLSI Design', 'EV Batteries', 'Japanese Culture'\n\n"
+        "2. TOPIC: A topic name (1-3 words). Think like an editor organizing a magazine — pick a name that could hold multiple related notes.\n"
+        "   Good examples: 'Literature' (not 'Poetry Analysis'), 'VLSI Design' (not 'FinFET vs GAAFET'), 'Energy Storage' (not 'EV Batteries')\n"
+        "   broader_topic (optional): If this note clearly fits under a broader category, suggest it here (nullable string).\n\n"
         "3. TITLE: A clean, concise, clear title for this note (3-8 words, capitalized, NO markdown formatting, NO asterisks, NO links, e.g. 'KMSB Television Station' or 'Color Theory for Artists').\n\n"
         "4. SUMMARY — extract these fields separately:\n"
         "   - core_claim: 1 sentence — the single most important claim/finding. Recall anchor.\n"
@@ -67,6 +68,7 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         "  \"route_hint\": null,\n"
         "  \"personal_insight\": null,\n"
         "  \"topic_name\": \"Topic Name\",\n"
+        "  \"broader_topic\": null,\n"
         "  \"title\": \"Clear Concise Note Title\",\n"
         "  \"core_claim\": \"Single most important finding.\",\n"
         "  \"facts\": [\"Specific fact or argument one.\", \"Specific fact or argument two.\", \"Specific fact or argument three.\"],\n"
@@ -94,6 +96,7 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         # Extract fields with safe fallbacks
         route_hint = data.get("route_hint")
         personal_insight = data.get("personal_insight")
+        broader_topic = data.get("broader_topic")
         topic_name = data.get("topic_name") or "General"
         note_title = data.get("title")
         core_claim = data.get("core_claim")
@@ -129,6 +132,7 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         # Fallback heuristics
         route_hint = None
         personal_insight = None
+        broader_topic = None
         topic_name = "General"
         core_claim = None
         facts = []
@@ -189,6 +193,7 @@ async def understand(raw_input: str) -> Dict[str, Any]:
         "source_url": source_url,
         "source_type": source_type,
         "personal_insight": personal_insight,
+        "broader_topic": broader_topic if route_hint else None,
         "topic_name": topic_name,
         "title": note_title,
         "entities": entities,

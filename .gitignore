@@ -153,3 +153,12 @@ Desktop.ini
 
 # ngrok request dumps
 ngrok_*.json
+
+# Runtime artifacts
+server.log
+_gen.py
+*.tmp
+scratch_*.py
+
+# Windows batch launcher (keep local)
+start.bat

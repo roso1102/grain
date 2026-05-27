@@ -1,9 +1,11 @@
 import logging
+import time
 from typing import Optional, Any
 from fastapi import APIRouter, Request, BackgroundTasks
 from pydantic import BaseModel
 
 from app.core.logger import logger
+from app.core.config import settings
 from app.integrations.telegram import parse_webhook_update, send_message
 from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
@@ -14,6 +16,7 @@ from app.services.enrichment_engine import try_enrich
 from app.db.queries import insert_note
 from app.db.supabase import supabase
 from app.models.note import NoteInput
+from app.integrations.telegram import DraftStream, send_typing, grain_keyboard, send_note_card
 
 router = APIRouter(tags=["Ingestion"])
 
@@ -40,56 +43,48 @@ async def process_telegram_ingestion(
         clean_input = raw_input.strip()
         
         # ── Route Telegram commands ──────────────────────────────────────
-        if clean_input.startswith("/note") or clean_input.startswith("/edit") or \
+        if clean_input == "/help" or clean_input == "/start" or \
+           clean_input.startswith("/note") or clean_input.startswith("/edit") or \
            clean_input.startswith("/fact") or clean_input.startswith("/retitle") or \
-           clean_input.startswith("/delete"):
+           clean_input.startswith("/delete") or clean_input.startswith("/ask") or \
+           clean_input.startswith("/status") or clean_input.startswith("/move") or \
+           clean_input.startswith("/recent") or clean_input.startswith("/think"):
+            await send_typing(chat_id)
             await _handle_note_command(chat_id, clean_input)
             return
         
-        # Check if the input is a semantic search command
-        if clean_input.startswith("/ask"):
-            query = clean_input[4:].strip()
-            if not query:
-                await send_message(chat_id, "⚠️ Please provide a query (e.g. `/ask FinFET vs GAAFET`)")
-                return
-                
-            results = await search_notes(query, limit=3, threshold=0.2)
-            if not results:
-                await send_message(chat_id, f"🔍 No matching notes found for query: '{query}'")
-                return
-                
-            reply = f"🔍 *Semantic Search Results for:* '{query}'\n\n"
-            for idx, r in enumerate(results, start=1):
-                reply += (
-                    f"{idx}. *[{r.get('topic_name', 'General')}]* (Similarity: {r.get('similarity', 0.0):.2f})\n"
-                    f"📝 {r['summary']}\n"
-                )
-                if r.get("personal_insight"):
-                    reply += f"💡 _Insight:_ {r['personal_insight']}\n"
-                if r.get("source_url"):
-                    reply += f"🔗 [Link]({r['source_url']})\n"
-                reply += "\n"
-            await send_message(chat_id, reply)
-            return
-
         logger.info(f"Processing Telegram note for chat_id={chat_id}")
-        
+        t0 = time.time()
+        await send_typing(chat_id)
+        stream = DraftStream(chat_id, draft_id=1)
+        await stream.update("🧠 Analyzing content...")
+
         # 1. Run understand orchestrator
         parsed_data = await understand(raw_input)
-        
-        # 2. Snap topic to existing similar topic or create new one
+        logger.info(f"[TIMING] understand() took {time.time()-t0:.1f}s")
+
+        # 2. Snap topic
+        await stream.update(f"🏷️ Classifying topic...\n📂 *Topic:* {parsed_data.get('topic_name', '?')}")
+        t1 = time.time()
         topic_name = parsed_data["topic_name"]
-        topic_id, snapped_topic_name = await snap_topic(topic_name)
-            
-        # 3. Generate summary embedding
+        broader_topic = parsed_data.get("broader_topic")
+        topic_id, snapped_topic_name = await snap_topic(topic_name, broader_topic=broader_topic)
+        logger.info(f"[TIMING] snap_topic() took {time.time()-t1:.1f}s")
+
+        # 3. Generate embedding + enrichment
+        await stream.update(f"📂 Topic: {snapped_topic_name}\n📝 Building summary...")
+        t2 = time.time()
         note_embedding = embed(parsed_data["summary"])
-            
-        # 3a. Run enrichment check — merge if near-duplicate exists (sim >= 0.88)
+        logger.info(f"[TIMING] embed() took {time.time()-t2:.1f}s")
+
+        t3 = time.time()
         was_enriched, enriched_note_id = await try_enrich(
             new_raw_text=parsed_data["raw_text"],
             new_summary=parsed_data["summary"],
             new_embedding=note_embedding
         )
+
+        logger.info(f"[TIMING] try_enrich() took {time.time()-t3:.1f}s")
 
         if was_enriched and enriched_note_id:
             logger.info(f"Note merged into existing note {enriched_note_id} via enrichment.")
@@ -106,13 +101,16 @@ async def process_telegram_ingestion(
                 reply += f"🔑 *Core:* {core_line}\n"
             else:
                 reply += f"📝 *Summary:* {parsed_data['summary'][:120]}\n"
-            await send_message(chat_id, reply)
+            await stream.finish(reply)
+            logger.info(f"[TIMING] TOTAL enriched pipeline: {time.time()-t0:.1f}s")
             return
 
         # 4. Insert note (no near-duplicate found)
+        t4 = time.time()
         note_input = NoteInput(
             raw_text=parsed_data["raw_text"],
             summary=parsed_data["summary"],
+            title=parsed_data.get("title"),
             source_url=parsed_data["source_url"],
             source_type=parsed_data["source_type"] if source_type == "telegram_text" else source_type,
             personal_insight=parsed_data["personal_insight"],
@@ -121,49 +119,22 @@ async def process_telegram_ingestion(
             facets=parsed_data.get("facets") or {}
         )
         saved_note = insert_note(note_input)
-        logger.info(f"Successfully saved note {saved_note.id} in Supabase.")
-        
-        # 5. Sync note to Obsidian
-        try:
-            from app.services.obsidian_sync import sync_note_to_obsidian
-            await sync_note_to_obsidian(saved_note.id)
-        except Exception as e:
-            logger.error(f"Failed to sync note to Obsidian: {e}", exc_info=True)
-            
-        # 6. Extract key entities
-        try:
-            from app.db.queries import upsert_entity, link_note_to_entity
-            from app.models.entity import EntityCreate
-            
-            entities = parsed_data.get("entities", [])
-            for ent in entities:
-                ent_name = ent.get("name")
-                ent_type = ent.get("type")
-                if ent_name and ent_type:
-                    ent_emb = embed(ent_name)
-                    entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb))
-                    link_note_to_entity(saved_note.id, entity_schema.id)
-                    logger.info(f"Linked entity '{ent_name}' to note {saved_note.id}.")
-        except Exception as e:
-            logger.error(f"Failed to extract/link entities: {e}", exc_info=True)
+        logger.info(f"[TIMING] insert_note() took {time.time()-t4:.1f}s")
 
-        # 6b. Build memory graph relations for this note
-        try:
-            edges = await build_relations_for_note(saved_note.id, parsed_data["summary"])
-            if edges > 0:
-                logger.info(f"Created {edges} relation edge(s) for note {saved_note.id}.")
-        except Exception as e:
-            logger.error(f"Failed to build memory graph relations: {e}", exc_info=True)
-
-        # 7. Formulate response and reply to Telegram
-        from app.services.obsidian_sync import make_shortcode
+        # ── Build capture reply → send instantly (user sees result < 2s) ─
+        from app.services.obsidian_sync import make_shortcode, _note_filename
+        from urllib.parse import quote
         shortcode = make_shortcode(saved_note.id)
         core_line = parsed_data.get("core_claim", "")
         facts_list = parsed_data.get("facts", [])
         why_line = parsed_data.get("why_matters")
         status_line = parsed_data.get("status")
+        title = parsed_data.get("title", "")
 
-        # Strip bold markers for Telegram plain text
+        # Build Obsidian deep link (as plain text — Telegram blocks obsidian:// in buttons)
+        vault_name = settings.OBSIDIAN_VAULT_PATH.rstrip("/\\").split("\\")[-1].split("/")[-1]
+        md_filename = _note_filename(snapped_topic_name, title or core_line or "Untitled")
+
         if core_line:
             core_line = core_line.replace("**", "").rstrip(".")
         if why_line:
@@ -186,24 +157,210 @@ async def process_telegram_ingestion(
         if status_line:
             status_line = status_line.replace("**", "")
             reply += f"📊 *Status:* {status_line}\n"
-            
-        await send_message(chat_id, reply)
-        
+
+        # Onboarding: track note count and guide on first captures
+        note_count = _get_note_count(chat_id)
+        _set_note_count(chat_id, note_count + 1)
+        onboarding = ""
+        if note_count == 0:
+            onboarding = (
+                "\n---\n☝️ *First capture!*\n"
+                "You can `Edit`, `Move`, or `Delete` this note using the buttons above.\n"
+                "Send `/help` to see all commands."
+            )
+        elif note_count == 1:
+            onboarding = (
+                "\n---\n🚀 *Second note!*\n"
+                "Try `/ask solar` to search across your notes.\n"
+                "Or type `@grainbot` in any chat to search inline."
+            )
+        elif note_count == 2:
+            onboarding = (
+                "\n---\n🎉 *Third note — you're on a roll!*\n"
+                "You can `/move X Topic` to re-route any note.\n"
+                "Or `/status X Hypothesis` to flag tentative ideas."
+            )
+        reply += onboarding
+
+        # Add Obsidian link as plain text (clickable on mobile, copy-paste on desktop)
+        reply += f"\n\n📄 `obsidian://open?vault={vault_name}&file=Grain/{quote(md_filename, safe='')}`"
+
+        await send_note_card(chat_id, reply, shortcode)
+        logger.info(f"[TIMING] Reply sent at {time.time()-t0:.1f}s — user gets instant feedback")
+
+        # ── Background: syncing, entities, relations (user doesn't wait) ─
+        t5 = time.time()
+        try:
+            from app.services.obsidian_sync import sync_note_to_obsidian
+            await sync_note_to_obsidian(saved_note.id)
+        except Exception as e:
+            logger.error(f"Obsidian sync failed: {e}")
+        logger.info(f"[TIMING] obsidian_sync() took {time.time()-t5:.1f}s (background)")
+
+        t6 = time.time()
+        try:
+            from app.db.queries import upsert_entity, link_note_to_entity
+            from app.models.entity import EntityCreate
+            entities = parsed_data.get("entities", [])
+            for ent in entities:
+                ent_name = ent.get("name")
+                ent_type = ent.get("type")
+                if ent_name and ent_type:
+                    ent_emb = embed(ent_name)
+                    entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb))
+                    link_note_to_entity(saved_note.id, entity_schema.id)
+        except Exception as e:
+            logger.error(f"Entity linking failed: {e}")
+        logger.info(f"[TIMING] entity extraction took {time.time()-t6:.1f}s (background)")
+
+        t7 = time.time()
+        try:
+            edges = await build_relations_for_note(saved_note.id, parsed_data["summary"])
+            if edges > 0:
+                logger.info(f"Created {edges} relation edge(s).")
+        except Exception as e:
+            logger.error(f"Relation building failed: {e}")
+        logger.info(f"[TIMING] relations took {time.time()-t7:.1f}s (background)")
+        logger.info(f"[TIMING] TOTAL pipeline: {time.time()-t0:.1f}s (user saw reply at ~{t4-t0:.1f}s)")
+
     except Exception as e:
         logger.error(f"Error in ingestion pipeline: {e}", exc_info=True)
         await send_message(chat_id, f"❌ Failed to process capture: {str(e)}")
+
+# ── Onboarding tracking (per-chat note count) ──────────────────────────────
+
+def _get_note_count(chat_id: int) -> int:
+    """Returns how many notes this chat has captured (used for onboarding)."""
+    try:
+        result = supabase.rpc("get_chat_note_count", {"p_chat_id": chat_id}).execute()
+        if result.data is not None:
+            return int(result.data)
+    except Exception:
+        pass
+    # Fallback: count all notes (we don't track per-chat in notes table)
+    try:
+        result = supabase.table("notes").select("id", count="exact").execute()
+        return result.count or 0
+    except Exception:
+        return 0
+
+
+def _set_note_count(chat_id: int, count: int) -> None:
+    """Updates the note count for a chat (best-effort, no-op if table doesn't exist)."""
+    try:
+        supabase.table("agent_state").upsert({
+            "chat_id": chat_id,
+            "note_count": count,
+        }).execute()
+    except Exception:
+        pass
+
+
+# ── Pending actions ─────────────────────────────────────────────────────────
+
+_pending_actions: dict = {}
+
 
 @router.post("/webhook")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Endpoint that receives incoming messages from Telegram Bot Webhook.
+    Handles messages, inline queries (@grainbot), and callback queries (button presses).
     """
     try:
         payload = await request.json()
+        
+        # ── Inline query (@grainbot <query>) ─────────────────────────────
+        if "inline_query" in payload:
+            iq = payload["inline_query"]
+            query = (iq.get("query") or "").strip()
+            iq_id = iq.get("id", "")
+            if query and iq_id:
+                from app.services.retrieval_engine import search_notes
+                from app.integrations.telegram import answer_inline_query
+                results = await search_notes(query, limit=5, threshold=0.2)
+                await answer_inline_query(iq_id, results)
+            return {"status": "ok"}
+        
+        # ── Check if this is a reply to a pending action prompt ──────────
+        if "message" in payload and "text" in payload["message"]:
+            chat_id = payload["message"]["chat"]["id"]
+            text = payload["message"].get("text", "").strip()
+            reply_to = payload["message"].get("reply_to_message")
+            
+            if chat_id in _pending_actions:
+                pending = _pending_actions.pop(chat_id)
+                action = pending["action"]
+                shortcode = pending["shortcode"]
+                
+                if action == "edit":
+                    full = f"/edit {shortcode} {text}"
+                elif action == "move":
+                    full = f"/move {shortcode} {text}"
+                elif action == "delete":
+                    if text.lower() in ("yes", "y", "confirm"):
+                        full = f"/delete {shortcode}"
+                    else:
+                        await send_message(chat_id, "❌ Delete cancelled.")
+                        return {"status": "ok"}
+                else:
+                    full = text
+                
+                await send_typing(chat_id)
+                await _handle_note_command(chat_id, full)
+                return {"status": "ok"}
+
+        # ── Callback query (button press) ────────────────────────────────
+        if "callback_query" in payload:
+            cq = payload["callback_query"]
+            data = cq.get("data", "")
+            chat_id = cq["message"]["chat"]["id"]
+            msg_id = cq["message"]["message_id"]
+
+            from app.integrations.telegram import bot as tg_bot
+            try:
+                await tg_bot.answer_callback_query(callback_query_id=cq["id"])
+            except Exception:
+                pass
+
+            parts = data.split(":", 1)
+            if len(parts) == 2:
+                action, shortcode = parts
+
+                if action == "note":
+                    await send_typing(chat_id)
+                    await _handle_note_command(chat_id, f"/note {shortcode}")
+                
+                elif action == "edit":
+                    _pending_actions[chat_id] = {"action": "edit", "shortcode": shortcode}
+                    await tg_bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✏️ Reply with the new content for `{shortcode}`:",
+                        parse_mode="Markdown",
+                    )
+                
+                elif action == "move":
+                    _pending_actions[chat_id] = {"action": "move", "shortcode": shortcode}
+                    await tg_bot.send_message(
+                        chat_id=chat_id,
+                        text=f"📂 Reply with the new topic name for `{shortcode}`:",
+                        parse_mode="Markdown",
+                    )
+                
+                elif action == "delete":
+                    _pending_actions[chat_id] = {"action": "delete", "shortcode": shortcode}
+                    await tg_bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🗑️ Reply *yes* to delete `{shortcode}`:",
+                        parse_mode="Markdown",
+                    )
+
+            return {"status": "ok"}
+        
+        # ── Regular message ──────────────────────────────────────────────
         chat_id, text, source_type, file_id = parse_webhook_update(payload)
         
         if chat_id is not None and text:
-            # Delegate heavy lifting to background worker to prevent webhook timeouts
             background_tasks.add_task(
                 process_telegram_ingestion,
                 chat_id=chat_id,
@@ -217,6 +374,100 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         logger.error(f"Webhook routing error: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
 
+async def _send_help(chat_id: int) -> None:
+    """Sends a formatted list of all Telegram commands with reply keyboard."""
+    from app.integrations.telegram import grain_keyboard
+    help_text = (
+        "🌾 *Grain PKOS Commands*\n\n"
+        "*Capture a note*\n"
+        "Just send any text or link → auto-saved\n\n"
+        "*Commands*\n"
+        "`/note <ID>` — Show a note\n"
+        "`/ask <query>` — Semantic search across notes\n"
+        "`/think <question>` — Ask complex questions, get connected answers with citations\n"
+        "`/edit <ID> <text>` — Replace content, re-run LLM\n"
+        "`/fact <ID> <text>` — Append a fact\n"
+        "`/retitle <ID> <title>` — Change the title\n"
+        "`/status <ID> <value>` — Set status (Established, Hypothesis, Debate, Speculative)\n"
+        "`/move <ID> <topic>` — Change topic\n"
+        "`/delete <ID>` — Delete note + Obsidian file\n"
+        "`/recent [N]` — Show last N notes (default 10)\n"
+        "`/help` — Show this message\n\n"
+        "_Tip: shortcodes are 6-char IDs shown on capture_"
+    )
+    try:
+        from app.integrations.telegram import bot as tg_bot
+        await tg_bot.send_message(chat_id=chat_id, text=help_text, parse_mode="Markdown", reply_markup=grain_keyboard())
+    except Exception as e:
+        logger.warning(f"Failed to send help with keyboard: {e}")
+        await send_message(chat_id, help_text)
+
+
+async def _handle_ask_command(chat_id: int, query: str) -> None:
+    """Semantic search via LLM re-ranker, formatted for Telegram."""
+    from app.services.retrieval_engine import search_notes
+    from app.services.obsidian_sync import make_shortcode
+    from uuid import UUID
+
+    results = await search_notes(query, limit=5, threshold=0.2)
+    if not results:
+        await send_message(chat_id, f"🔍 No matching notes found for: '{query}'")
+        return
+
+    reply = f"🔍 *Search: {query}*\n\n"
+    for idx, r in enumerate(results[:5], start=1):
+        sim = r.get("similarity", 0.0)
+        llm_score = r.get("llm_score")
+        topic_name = r.get("topic_name", "General")
+        summary = (r.get("summary") or "")[:300]
+        source_url = r.get("source_url")
+        via = r.get("matched_via", "")
+
+        score_display = f"✨ LLM: {llm_score}/5 · " if llm_score else ""
+        via_display = f" ({via})" if via else ""
+        reply += f"{idx}. *[{topic_name}]* {score_display}Σ={sim:.2f}{via_display}\n"
+
+        # Strip bold for Telegram's Markdown rendering
+        core_line = summary.replace("**", "").split("\n")[0].strip()
+        core_line = core_line.replace("Core:", "").strip() if core_line.startswith("Core:") else core_line[:80]
+        reply += f"   📝 {core_line}\n"
+        if source_url:
+            reply += f"   🔗 [Source]({source_url})\n"
+        reply += "\n"
+
+    await send_message(chat_id, reply)
+
+
+async def _handle_think_command(chat_id: int, question: str) -> None:
+    """Conversational recall: hybrid search + LLM synthesis, returns cited answer."""
+    from app.services.recall_engine import recall_answer
+
+    await send_typing(chat_id)
+    result = await recall_answer(question, limit=8)
+    answer = result["answer"]
+    await send_message(chat_id, answer)
+
+
+async def _handle_recent_command(chat_id: int, count: int) -> None:
+    from app.services.obsidian_sync import make_shortcode as mk_shortcode
+    from uuid import UUID
+    notes_res = supabase.table("notes").select("id, title, created_at").order("created_at", desc=True).limit(count).execute()
+    note_rows = notes_res.data or []
+    if not note_rows:
+        await send_message(chat_id, "📭 No notes yet.")
+        return
+    reply = f"🕐 *Recent {len(note_rows)} Notes*\n\n"
+    for row in note_rows:
+        sc = mk_shortcode(UUID(row["id"]))
+        title = (row.get("title") or "Untitled")[:60]
+        reply += f"`{sc}` — {title}\n"
+    try:
+        from app.integrations.telegram import bot as tg_bot
+        await tg_bot.send_message(chat_id=chat_id, text=reply, parse_mode="Markdown", reply_markup=grain_keyboard())
+    except Exception:
+        await send_message(chat_id, reply)
+
+
 async def _handle_note_command(chat_id: int, text: str) -> None:
     """
     Handles Telegram commands for editing notes.
@@ -227,8 +478,39 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
     /delete <shortcode>         → Delete note
     """
     from app.services.obsidian_sync import make_shortcode, resolve_shortcode, \
-        sync_note_to_obsidian, delete_note_from_obsidian
+        sync_note_to_obsidian, delete_note_from_obsidian, _note_filename, vault_dir
     from app.db.queries import get_note_by_id
+
+    # ── /ask — requires query, not shortcode ─────────────────────────────
+    lower = text.lower().strip()
+    if lower == "/help" or lower == "/start":
+        await _send_help(chat_id)
+        return
+    if lower.startswith("/ask "):
+        query = text[4:].strip()
+        if not query:
+            await send_message(chat_id, "⚠️ Please provide a query (e.g. `/ask cuckoo bird`)")
+            return
+        await _handle_ask_command(chat_id, query)
+        return
+    if lower.startswith("/think "):
+        query = text[6:].strip()
+        if not query:
+            await send_message(chat_id, "⚠️ Please provide a question (e.g. `/think How does ODAS relate to EV range?`)")
+            return
+        await _handle_think_command(chat_id, query)
+        return
+    if lower == "/recent" or lower.startswith("/recent "):
+        parts_r = text.split(maxsplit=1)
+        count = 10
+        if len(parts_r) >= 2:
+            try:
+                count = int(parts_r[1])
+            except ValueError:
+                pass
+        count = min(count, 30)
+        await _handle_recent_command(chat_id, count)
+        return
 
     parts = text.split(maxsplit=2)
     if len(parts) < 2:
@@ -274,7 +556,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
             reply += f"📊 *Status:* {status}\n"
         if note.source_url:
             reply += f"🔗 [Source]({note.source_url})\n"
-        await send_message(chat_id, reply)
+        await send_note_card(chat_id, reply, shortcode)
         return
 
     # ── /delete ──────────────────────────────────────────────────────────
@@ -284,25 +566,14 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
         await send_message(chat_id, f"🗑️ Note `{shortcode}` deleted.")
         return
 
-    # ── /retitle — just rename, no LLM ──────────────────────────────────
+    # ── /retitle — update title column ──────────────────────────────────
     if cmd == "/retitle":
         if len(parts) < 3:
             await send_message(chat_id, "⚠️ Usage: `/retitle <ID> <new title>`")
             return
         new_title = parts[2].strip()
-        # The title isn't stored in DB — it's derived from **Core:**
-        # Instead, we update the summary by replacing the **Core:** line
-        note = get_note_by_id(note_id)
-        if note and note.summary:
-            new_summary = note.summary
-            lines = note.summary.split("\n")
-            for i, line in enumerate(lines):
-                if line.strip().startswith("**Core:**"):
-                    lines[i] = f"**Core:** {new_title}"
-                    new_summary = "\n".join(lines)
-                    break
-            supabase.table("notes").update({"summary": new_summary}).eq("id", str(note_id)).execute()
-            await sync_note_to_obsidian(note_id)
+        supabase.table("notes").update({"title": new_title}).eq("id", str(note_id)).execute()
+        await sync_note_to_obsidian(note_id)
         await send_message(chat_id, f"✏️ Note `{shortcode}` retitled to: {new_title}")
         return
 
@@ -339,24 +610,91 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
     # ── /edit — full re-process ──────────────────────────────────────────
     if cmd == "/edit" and len(parts) >= 3:
         new_text = parts[2].strip()
-        # Re-run the full understand pipeline
+        # Re-run the LLM pipeline
         parsed_data = await understand(new_text)
-        topic_name = parsed_data["topic_name"]
-        topic_id, snapped_topic_name = await snap_topic(topic_name)
         note_embedding = embed(parsed_data["summary"])
 
-        supabase.table("notes").update({
+        # Preserve original topic ID — don't re-snap (edit = content change, not topic change)
+        existing_note = get_note_by_id(note_id)
+        original_topic_id = str(existing_note.topic_id) if existing_note and existing_note.topic_id else None
+        original_title = existing_note.title if existing_note else ""
+
+        # Delete the old .md file before re-syncing (title may have changed → different filename)
+        if original_topic_id and original_title:
+            try:
+                t_res = supabase.table("topics").select("name").eq("id", original_topic_id).execute()
+                old_topic_name = t_res.data[0]["name"] if t_res.data else "General"
+                old_filename = _note_filename(old_topic_name, original_title)
+                old_path = vault_dir() / old_filename
+                if old_path.exists():
+                    old_path.unlink()
+                    logger.info(f"Deleted old file {old_filename} before edit re-sync")
+            except Exception as e:
+                logger.warning(f"Failed to delete old file before edit: {e}")
+
+        update_data = {
             "raw_text": parsed_data["raw_text"],
             "summary": parsed_data["summary"],
+            "title": parsed_data.get("title"),
             "embedding": note_embedding,
             "source_url": parsed_data.get("source_url"),
             "source_type": parsed_data.get("source_type", "manual"),
-            "topic_id": str(topic_id),
             "facets": parsed_data.get("facets") or {},
-        }).eq("id", str(note_id)).execute()
+        }
+        if original_topic_id:
+            update_data["topic_id"] = original_topic_id
+
+        supabase.table("notes").update(update_data).eq("id", str(note_id)).execute()
 
         await sync_note_to_obsidian(note_id)
         await send_message(chat_id, f"✅ Note `{shortcode}` updated with new content.")
+        return
+
+    # ── /status — change epistemic status ───────────────────────────────
+    if cmd == "/status":
+        if len(parts) < 3:
+            await send_message(chat_id, "⚠️ Usage: `/status <ID> Established|Hypothesis|Debate|Speculative`")
+            return
+        new_status = parts[2].strip().capitalize()
+        valid = {"Established", "Hypothesis", "Debate", "Speculative"}
+        if new_status not in valid:
+            await send_message(chat_id, f"⚠️ Invalid status. Use: {', '.join(valid)}")
+            return
+        note = get_note_by_id(note_id)
+        if not note or not note.summary:
+            await send_message(chat_id, f"❌ Note `{shortcode}` not found or has no summary.")
+            return
+        # Replace or append status line in summary
+        lines = note.summary.split("\n")
+        replaced = False
+        new_lines = []
+        for line in lines:
+            if line.strip().startswith("**Status:**"):
+                new_lines.append(f"**Status:** {new_status}")
+                replaced = True
+            else:
+                new_lines.append(line)
+        if not replaced:
+            new_lines.append(f"\n**Status:** {new_status}")
+        supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).execute()
+        await sync_note_to_obsidian(note_id)
+        await send_message(chat_id, f"📊 Status for `{shortcode}` set to: {new_status}")
+        return
+
+    # ── /move — change topic ────────────────────────────────────────────
+    if cmd == "/move":
+        if len(parts) < 3:
+            await send_message(chat_id, "⚠️ Usage: `/move <ID> <new topic name>`")
+            return
+        new_topic = parts[2].strip()
+        topic_id, snapped_name = await snap_topic(new_topic)
+        supabase.table("notes").update({"topic_id": str(topic_id)}).eq("id", str(note_id)).execute()
+        await sync_note_to_obsidian(note_id)
+        await send_message(chat_id, f"📂 Note `{shortcode}` moved to topic: {snapped_name}")
+        return
+
+    # ── /recent — list recent notes (handled above)
+    if cmd == "/recent":
         return
 
     await send_message(chat_id, f"⚠️ Unknown command: {cmd}")
@@ -395,6 +733,7 @@ async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTask
         note_input = NoteInput(
             raw_text=parsed_data["raw_text"],
             summary=parsed_data["summary"],
+            title=parsed_data.get("title"),
             source_url=req.source_url or parsed_data["source_url"],
             source_type=req.source_type,
             personal_insight=parsed_data["personal_insight"],

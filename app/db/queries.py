@@ -17,11 +17,15 @@ def insert_note(note: NoteInput) -> NoteOutput:
             raise Exception("Failed to insert note into Supabase")
         return NoteOutput(**result.data[0])
     except Exception as e:
-        # Check if the error is about a missing "facets" column
+        # Retry without columns that may not exist yet
         err_str = str(e).lower()
-        if "facets" in err_str and ("column" in err_str or "does not exist" in err_str):
-            logger.warning("facets column does not exist yet. Retrying insert without facets.")
-            data.pop("facets", None)
+        popped = []
+        for col in ("facets", "title"):
+            if col in err_str and ("column" in err_str or "does not exist" in err_str):
+                data.pop(col, None)
+                popped.append(col)
+        if popped:
+            logger.warning(f"Columns {popped} don't exist yet. Retrying insert without them.")
             result = supabase.table("notes").insert(data).execute()
             if not result.data:
                 raise Exception("Failed to insert note into Supabase")
@@ -54,6 +58,11 @@ def get_topic_by_name(name: str) -> Optional[TopicSchema]:
     if not result.data:
         return None
     return TopicSchema(**result.data[0])
+
+def get_notes_by_topic_id(topic_id: UUID, limit: int = 200) -> list:
+    """Retrieves notes belonging to a specific topic, with their embeddings."""
+    result = supabase.table("notes").select("id, embedding").eq("topic_id", str(topic_id)).limit(limit).execute()
+    return result.data or []
 
 def upsert_entity(entity: EntityCreate) -> EntitySchema:
     """

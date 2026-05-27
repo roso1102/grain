@@ -21,6 +21,8 @@ class Settings(BaseSettings):
 
     # App thresholds / settings
     TOPIC_SNAP_THRESHOLD: float = 0.90
+    CLUSTER_THRESHOLD: float = 0.70
+    TOPIC_REVIEW_THRESHOLD: float = 0.70   # minimum sim to trigger LLM merge review
     ENRICH_THRESHOLD: float = 0.88
     
     # Port / Host configuration
