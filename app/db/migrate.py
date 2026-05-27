@@ -18,7 +18,11 @@ async def run_pending() -> None:
         logger.warning("DATABASE_URL not set — skipping migrations")
         return
 
-    conn = await asyncpg.connect(settings.DATABASE_URL)
+    try:
+        conn = await asyncpg.connect(settings.DATABASE_URL, ssl="require")
+    except Exception:
+        logger.exception("Cannot reach database — skipping migrations (app will still start)")
+        return
     try:
         # Ensure tracking table exists
         await conn.execute(
