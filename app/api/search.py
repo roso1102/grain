@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from uuid import UUID
 
+from app.api.auth import get_current_user_optional
 from app.services.retrieval_engine import search_notes
 from app.utils.ranking import rank_search_results
 from app.db.users import get_user_by_id
@@ -43,11 +44,14 @@ async def _resolve_user_id(x_user_id: Optional[str] = Header(None)) -> Optional[
 @router.post("", response_model=List[SearchResult])
 async def semantic_search(
     req: SearchRequest,
-    user_id: Optional[UUID] = Depends(_resolve_user_id),
+    header_user_id: Optional[UUID] = Depends(_resolve_user_id),
+    session_user_id: Optional[UUID] = Depends(get_current_user_optional),
 ):
     """
     API endpoint that performs semantic vector search on captured knowledge.
+    Auth via session JWT (dashboard) or X-User-Id header (REST API).
     """
+    user_id = session_user_id or header_user_id
     try:
         raw_results = await search_notes(
             req.query, 
@@ -57,7 +61,6 @@ async def semantic_search(
         )
         ranked = rank_search_results(raw_results)
         
-        # Construct output models
         results = []
         for r in ranked:
             results.append(SearchResult(

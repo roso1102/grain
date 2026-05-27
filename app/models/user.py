@@ -13,4 +13,5 @@ class UserSchema(BaseModel):
     id: UUID
     telegram_chat_id: Optional[int] = None
     display_name: Optional[str] = None
+    supabase_user_id: Optional[UUID] = None
     created_at: datetime

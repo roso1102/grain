@@ -1,9 +1,10 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.api.auth import get_current_user
 from app.db.supabase import supabase
 from app.db.queries import get_note_by_id
 
@@ -11,7 +12,7 @@ logger = logging.getLogger("grain.api.graph")
 router = APIRouter(tags=["Memory Graph"])
 
 
-def _fetch_related_note_ids(note_id: UUID) -> List[Dict[str, Any]]:
+def _fetch_related_note_ids(note_id: UUID, user_id: Optional[UUID] = None) -> List[Dict[str, Any]]:
     """
     Fetches all 1-hop relation edges for a given note from the `relations` table.
     Returns edges where the note is either the source or the target.
@@ -19,16 +20,20 @@ def _fetch_related_note_ids(note_id: UUID) -> List[Dict[str, Any]]:
     note_id_str = str(note_id)
 
     # Edges where note is the source
-    source_res = supabase.table("relations")\
+    source_query = supabase.table("relations")\
         .select("target_note_id, relation_type, score")\
-        .eq("source_note_id", note_id_str)\
-        .execute()
+        .eq("source_note_id", note_id_str)
+    if user_id:
+        source_query = source_query.eq("user_id", str(user_id))
+    source_res = source_query.execute()
 
     # Edges where note is the target (bidirectional lookup)
-    target_res = supabase.table("relations")\
+    target_query = supabase.table("relations")\
         .select("source_note_id, relation_type, score")\
-        .eq("target_note_id", note_id_str)\
-        .execute()
+        .eq("target_note_id", note_id_str)
+    if user_id:
+        target_query = target_query.eq("user_id", str(user_id))
+    target_res = target_query.execute()
 
     edges = []
     for row in (source_res.data or []):
@@ -49,7 +54,10 @@ def _fetch_related_note_ids(note_id: UUID) -> List[Dict[str, Any]]:
 
 
 @router.get("/related-notes/{note_id}")
-async def get_related_notes(note_id: UUID):
+async def get_related_notes(
+    note_id: UUID,
+    user_id: UUID = Depends(get_current_user),
+):
     """
     GET /related-notes/{note_id}
 
@@ -61,13 +69,13 @@ async def get_related_notes(note_id: UUID):
     """
     logger.info(f"Fetching related notes for note_id={note_id}")
 
-    # Verify source note exists
-    source_note = get_note_by_id(note_id)
+    # Verify source note exists and belongs to user
+    source_note = get_note_by_id(note_id, user_id=user_id)
     if not source_note:
         return {"error": f"Note {note_id} not found.", "related_notes": []}
 
-    # Fetch all relation edges
-    edges = _fetch_related_note_ids(note_id)
+    # Fetch all relation edges (scoped to user)
+    edges = _fetch_related_note_ids(note_id, user_id=user_id)
 
     if not edges:
         return {
@@ -81,7 +89,7 @@ async def get_related_notes(note_id: UUID):
     related_notes = []
     for edge in edges:
         related_id = UUID(edge["related_note_id"])
-        related_note = get_note_by_id(related_id)
+        related_note = get_note_by_id(related_id, user_id=user_id)
         if related_note:
             related_notes.append({
                 "note_id": str(related_note.id),

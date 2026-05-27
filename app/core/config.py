@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     TOPIC_REVIEW_THRESHOLD: float = 0.70   # minimum sim to trigger LLM merge review
     ENRICH_THRESHOLD: float = 0.88
     
+    # Security
+    TELEGRAM_WEBHOOK_SECRET: str = ""  # Secret token for Telegram webhook verification
+    SESSION_SECRET: str = ""           # Secret for signing dashboard session JWTs (generate a random string)
+    SUPABASE_SERVICE_KEY: str = ""     # service_role key for Supabase (bypasses RLS)
+    
     # Port / Host configuration
     HOST: str = "0.0.0.0"
     PORT: int = 8000

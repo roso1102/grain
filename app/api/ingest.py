@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.core.logger import logger
 from app.core.config import settings
+from app.api.auth import get_current_user_optional
 from app.integrations.telegram import parse_webhook_update, send_message
 from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
@@ -289,6 +290,13 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     Handles messages, inline queries (@grainbot), and callback queries (button presses).
     """
     try:
+        # ── Verify Telegram webhook secret (if configured) ──────────────
+        if settings.TELEGRAM_WEBHOOK_SECRET:
+            received_secret = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            if received_secret != settings.TELEGRAM_WEBHOOK_SECRET:
+                logger.warning("Webhook rejected: invalid X-Telegram-Bot-Api-Secret-Token")
+                return {"status": "forbidden"}
+
         payload = await request.json()
         
         # ── Inline query (@grainbot <query>) ─────────────────────────────
@@ -299,7 +307,8 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             if query and iq_id:
                 from app.services.retrieval_engine import search_notes
                 from app.integrations.telegram import answer_inline_query
-                results = await search_notes(query, limit=5, threshold=0.2, user_id=user_id)
+                # Inline queries don't carry a chat_id; search without user scoping
+                results = await search_notes(query, limit=5, threshold=0.2, user_id=None)
                 await answer_inline_query(iq_id, results)
             return {"status": "ok"}
         
@@ -516,8 +525,45 @@ async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] 
 
     # ── /ask — requires query, not shortcode ─────────────────────────────
     lower = text.lower().strip()
-    if lower == "/help" or lower == "/start":
+    if lower == "/help":
         await _send_help(chat_id)
+        return
+    if lower == "/start":
+        # Personalized welcome screen
+        user_info = None
+        if user_id:
+            try:
+                user_info = get_user_by_id(user_id)
+            except Exception:
+                pass
+        if user_info and user_info.display_name:
+            welcome = (
+                f"🌾 *Welcome to Grain, {user_info.display_name}!*\n\n"
+                f"Your Personal Knowledge OS is ready.\n"
+                f"🆔 Your ID: `{str(user_info.id)[:8]}...`\n\n"
+                f"*Getting started:*\n"
+                f"• Send any text or link — I'll capture and organize it\n"
+                f"• Use `/ask <query>` to search your knowledge\n"
+                f"• Use `/think <question>` for deep recall with citations\n"
+                f"• Type `@grainbot <query>` in any chat for inline search\n\n"
+                f"Send `/help` for all commands."
+            )
+        else:
+            welcome = (
+                f"🌾 *Welcome to Grain!*\n\n"
+                f"Your Personal Knowledge OS is ready.\n\n"
+                f"*Getting started:*\n"
+                f"• Send any text or link — I'll capture and organize it\n"
+                f"• Use `/ask <query>` to search your knowledge\n"
+                f"• Use `/think <question>` for deep recall with citations\n\n"
+                f"Send `/help` for all commands."
+            )
+        from app.integrations.telegram import bot as tg_bot
+        try:
+            await tg_bot.send_message(chat_id=chat_id, text=welcome, parse_mode="Markdown", reply_markup=grain_keyboard())
+        except Exception as e:
+            logger.warning(f"Failed to send welcome: {e}")
+            await send_message(chat_id, welcome)
         return
     if lower.startswith("/ask "):
         query = text[4:].strip()
@@ -752,11 +798,14 @@ async def process_entity_extraction_bg(note_id: Any, entities: list, user_id: Op
 async def ingest_note(
     req: ManualIngestRequest,
     background_tasks: BackgroundTasks,
-    user_id: Optional[UUID] = Depends(resolve_user_id),
+    header_user_id: Optional[UUID] = Depends(resolve_user_id),
+    session_user_id: Optional[UUID] = Depends(get_current_user_optional),
 ):
     """
     API endpoint to manually ingest a note without Telegram.
+    Auth via session JWT (dashboard) or X-User-Id header (REST API).
     """
+    user_id = session_user_id or header_user_id
     try:
         parsed_data = await understand(req.text)
         topic_name = parsed_data["topic_name"]

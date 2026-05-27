@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.core.logger import logger
 from app.core.config import settings
-from app.api import health, ingest, search, graph, facets
+from app.api import health, ingest, search, graph, facets, auth, dashboard
 from app.db.migrate import run_pending as run_migrations
 
 app = FastAPI(
@@ -16,6 +16,8 @@ app.include_router(ingest.router)
 app.include_router(search.router)
 app.include_router(graph.router)
 app.include_router(facets.router)
+app.include_router(auth.router)
+app.include_router(dashboard.router)
 
 @app.on_event("startup")
 async def startup_event():

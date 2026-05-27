@@ -33,7 +33,7 @@ def create_user(chat_id: int, display_name: str = "Telegram User") -> UserSchema
     result = supabase.table("users").insert(data).execute()
     if not result.data:
         raise Exception(f"Failed to create user for chat_id {chat_id}")
-    logger.info(f"Created new user for chat_id {chat_id}: id={result.data[0]["id"]}")
+    logger.info(f"Created new user for chat_id {chat_id}: id={result.data[0]['id']}")
     return UserSchema(**result.data[0])
 
 
@@ -43,3 +43,18 @@ def get_or_create_user_by_chat_id(chat_id: int) -> UserSchema:
     if user:
         return user
     return create_user(chat_id)
+
+
+def link_user_to_supabase(chat_id: int, supabase_user_id: UUID) -> Optional[UserSchema]:
+    """Links a Telegram user to their Supabase Auth account."""
+    try:
+        result = supabase.table("users")\
+            .update({"supabase_user_id": str(supabase_user_id)})\
+            .eq("telegram_chat_id", chat_id)\
+            .execute()
+        if result.data:
+            logger.info(f"Linked user chat_id={chat_id} to supabase_user_id={supabase_user_id}")
+            return UserSchema(**result.data[0])
+    except Exception as e:
+        logger.warning(f"Failed to link user {chat_id} to supabase_user_id {supabase_user_id}: {e}")
+    return None

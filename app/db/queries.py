@@ -32,9 +32,12 @@ def insert_note(note: NoteInput) -> NoteOutput:
             return NoteOutput(**result.data[0])
         raise e
 
-def get_note_by_id(note_id: UUID) -> Optional[NoteOutput]:
-    """Retrieves a note by its UUID."""
-    result = supabase.table("notes").select("*").eq("id", str(note_id)).execute()
+def get_note_by_id(note_id: UUID, user_id: Optional[UUID] = None) -> Optional[NoteOutput]:
+    """Retrieves a note by its UUID, optionally scoped to a user."""
+    query = supabase.table("notes").select("*").eq("id", str(note_id))
+    if user_id:
+        query = query.eq("user_id", str(user_id))
+    result = query.execute()
     if not result.data:
         return None
     return NoteOutput(**result.data[0])
