@@ -370,20 +370,20 @@
 
 > **Goal:** Run Grain 24/7 without your laptop.
 
-- [ ] **P9.1** — Create `Dockerfile` for the FastAPI app  
-  `Completed: ___________`
+- [~] **P9.1** — Create `Dockerfile` for the FastAPI app  
+  `Completed: 2026-05-27 (Render auto-detects Python — no Dockerfile needed)`
 
-- [ ] **P9.2** — Setup Railway or Render project, connect GitHub repo  
-  `Completed: ___________`
+- [x] **P9.2** — Setup Railway or Render project, connect GitHub repo  
+  `Completed: 2026-05-27`
 
-- [ ] **P9.3** — Configure all environment variables in the cloud dashboard  
-  `Completed: ___________`
+- [x] **P9.3** — Configure all environment variables in the cloud dashboard  
+  `Completed: 2026-05-27`
 
-- [ ] **P9.4** — Point Telegram webhook to the live cloud URL  
-  `Completed: ___________`
+- [x] **P9.4** — Point Telegram webhook to the live cloud URL  
+  `Completed: 2026-05-27`
 
-- [ ] **P9.5** — Smoke test all commands on the live deployed version  
-  `Completed: ___________`
+- [~] **P9.5** — Smoke test all commands on the live deployed version  
+  `Completed: 2026-05-27 (basic: /note, /ask, /think work; full matrix pending)`
 
 ---
 
@@ -394,11 +394,11 @@
 - [ ] **P10.0** — Create `users` table, `UserSchema`, `app/db/users.py` helpers, auto-register on `/start`  
   `Completed: 2026-05-27`
 
-- [ ] **P10.1** — Add `user_id` to all data tables (`notes`, `topics`, `entities`, `note_entities`, `relations`, `enrichment_log`, `agent_state`). Drop global UNIQUEs, add per-user `(user_id, name)` UNIQUEs. Add `p_user_id` to `match_notes` RPC. Backfill existing data.  
-  `Completed: ___________`
+- [x] **P10.1** — Add `user_id` to all data tables (`notes`, `topics`, `entities`, `note_entities`, `relations`, `enrichment_log`, `agent_state`). Drop global UNIQUEs, add per-user `(user_id, name)` UNIQUEs. Add `p_user_id` to `match_notes` RPC. Backfill existing data.  
+  `Completed: 2026-05-27`
 
-- [ ] **P10.2** — Update all 22 Python files that make Supabase calls to filter by `user_id`. Wire `user_id` through the entire pipeline from webhook entry to every query.  
-  `Completed: ___________`
+- [x] **P10.2** — Update all 22 Python files that make Supabase calls to filter by `user_id`. Wire `user_id` through the entire pipeline from webhook entry to every query.  
+  `Completed: 2026-05-27`
 
 - [ ] **P10.3** — Telegram auto-auth: verify `X-Telegram-Bot-Api-Secret-Token` header on webhook. Welcome screen on `/start` with user identity.  
   `Completed: ___________`
