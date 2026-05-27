@@ -15,12 +15,18 @@ EXPECTED_DIM = 3072
 
 async def _ensure_dimension(conn) -> None:
     """Ensure all embedding columns and match_notes use the correct dimension."""
-    logger.info(f"Ensuring vector dimension = {EXPECTED_DIM}")
+    logger.info(f"Enforcing vector dimension = {EXPECTED_DIM}")
+
+    # Drop match_notes first — it depends on the column types
+    await conn.execute("DROP FUNCTION IF EXISTS match_notes CASCADE")
+
     for table in ("topics", "notes", "entities"):
         await conn.execute(
             f"ALTER TABLE {table} ALTER COLUMN embedding TYPE vector({EXPECTED_DIM})"
         )
+        logger.info(f"  Altered {table}.embedding → vector({EXPECTED_DIM})")
 
+    # Recreate match_notes with correct dimension
     await conn.execute(
         f"""
         CREATE OR REPLACE FUNCTION match_notes (
@@ -63,6 +69,7 @@ async def _ensure_dimension(conn) -> None:
         """
     )
     await conn.execute("NOTIFY pgrst, 'reload schema'")
+    logger.info("Vector dimension enforcement complete")
 
 
 async def run_pending() -> None:
@@ -114,9 +121,11 @@ async def run_pending() -> None:
                 )
 
         logger.info("All pending migrations applied successfully")
-        await _ensure_dimension(conn)
+        try:
+            await _ensure_dimension(conn)
+        except Exception:
+            logger.exception("Dimension enforcement failed — app will still start")
     except Exception:
         logger.exception("Migration failed")
-        raise
     finally:
         await conn.close()
