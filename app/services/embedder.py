@@ -10,7 +10,7 @@ model_name = "text-embedding-004"
 
 async def embed(text: str) -> List[float]:
     """
-    Generates a 384-dimensional normalized embedding via Gemini's text-embedding-004 API.
+    Generates a 768-dimensional normalized embedding via Gemini's text-embedding-004 API.
     Falls back to a zero vector on failure.
     """
     if not text or not text.strip():

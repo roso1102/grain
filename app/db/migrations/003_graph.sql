@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS entities (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name TEXT UNIQUE NOT NULL,
     type TEXT NOT NULL, -- 'concept' | 'project' | 'technology' | 'person'
-    embedding vector(384)
+    embedding vector(768)
 );
 
 -- Create note_entities junction table

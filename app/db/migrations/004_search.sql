@@ -1,6 +1,6 @@
 -- Create match_notes function for pgvector similarity search
 CREATE OR REPLACE FUNCTION match_notes (
-  query_embedding vector(384),
+  query_embedding vector(768),
   match_threshold float,
   match_count int
 )
