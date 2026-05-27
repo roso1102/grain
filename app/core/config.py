@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = ""  # Direct Postgres connection string for running migrations
     GEMINI_API_KEY: str
     TELEGRAM_BOT_TOKEN: str
+    TELEGRAM_BOT_ID: str = ""  # Numeric bot ID from BotFather (used as client_id for OIDC login)
     GROQ_API_KEY: Optional[str] = None
     DEEPSEEK_API_KEY: Optional[str] = None
     NVIDIA_API_KEY: Optional[str] = None

@@ -12,5 +12,5 @@ lxml
 trafilatura
 feedparser
 youtube-transcript-api
-pyjwt
+pyjwt[crypto]
 
