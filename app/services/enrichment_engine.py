@@ -136,7 +136,7 @@ async def try_enrich(
             return False, None
 
         # 3. Embed the merged summary
-        merged_embedding = embed(merged_summary)
+        merged_embedding = await embed(merged_summary)
 
         # 4. Construct merged raw_text (append new content to existing)
         merged_raw_text = (

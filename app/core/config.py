@@ -29,9 +29,6 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # Embedding model name
-    EMBEDDING_MODEL_NAME: str = "BAAI/bge-small-en-v1.5"
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

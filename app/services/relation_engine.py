@@ -134,7 +134,7 @@ async def build_relations_for_note(note_id: UUID, summary: str) -> int:
         return 0
 
     # 1. Embed the summary
-    note_embedding = embed(summary)
+    note_embedding = await embed(summary)
 
     # 2. Find top similar notes above threshold
     similar_notes = get_top_similar_notes(note_id, note_embedding)

@@ -154,7 +154,7 @@ async def search_notes(
     logger.info(f"Performing semantic search for query: '{query_text}'")
     try:
         # 1. Generate query embedding
-        query_embedding = embed(query_text)
+        query_embedding = await embed(query_text)
 
         # 2. Call pgvector RPC matching function
         response = supabase.rpc(

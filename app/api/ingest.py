@@ -74,7 +74,7 @@ async def process_telegram_ingestion(
         # 3. Generate embedding + enrichment
         await stream.update(f"📂 Topic: {snapped_topic_name}\n📝 Building summary...")
         t2 = time.time()
-        note_embedding = embed(parsed_data["summary"])
+        note_embedding = await embed(parsed_data["summary"])
         logger.info(f"[TIMING] embed() took {time.time()-t2:.1f}s")
 
         t3 = time.time()

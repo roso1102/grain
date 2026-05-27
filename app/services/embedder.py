@@ -1,28 +1,29 @@
 import logging
 from typing import List
-from sentence_transformers import SentenceTransformer
-from app.core.config import settings
+from google.genai import types
+from app.integrations.gemini import gemini_client
 
 logger = logging.getLogger("grain.embedder")
 
-logger.info(f"Initializing embedding model: {settings.EMBEDDING_MODEL_NAME}...")
-try:
-    # Load sentence transformer model onto memory (runs locally on CPU)
-    model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
-    logger.info("Embedding model loaded successfully.")
-except Exception as e:
-    logger.critical(f"Failed to load embedding model: {e}", exc_info=True)
-    raise e
+model_name = "text-embedding-004"
 
-def embed(text: str) -> List[float]:
+
+async def embed(text: str) -> List[float]:
     """
-    Generates a 384-dimensional normalized float list embedding for the input text.
+    Generates a 384-dimensional normalized embedding via Gemini's text-embedding-004 API.
+    Falls back to a zero vector on failure.
     """
     if not text or not text.strip():
         return [0.0] * 384
+
     try:
-        embedding = model.encode(text, normalize_embeddings=True)
-        return embedding.tolist()
+        response = await gemini_client.aio.models.embed_content(
+            model=model_name,
+            contents=text,
+            config=types.EmbedContentConfig(output_dimensionality=384),
+        )
+        values = response.embeddings[0].values
+        return [float(v) for v in values]
     except Exception as e:
-        logger.error(f"Error generating embedding: {e}")
+        logger.error(f"Gemini embedding failed: {e}")
         return [0.0] * 384

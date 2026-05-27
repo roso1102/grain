@@ -2,6 +2,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Add embedding columns to topics and notes tables
--- BAAI/bge-small-en-v1.5 produces vectors of size 384
+-- Gemini text-embedding-004 produces vectors; we truncate to 384 dimensions
 ALTER TABLE topics ADD COLUMN IF NOT EXISTS embedding vector(384);
 ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(384);

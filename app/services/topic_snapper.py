@@ -68,7 +68,7 @@ async def snap_topic(
             parent_id = parent_topic.id
         else:
             # Embed and create the broader topic
-            bt_emb = embed(bt_clean)
+            bt_emb = await embed(bt_clean)
             try:
                 new_parent = insert_topic(TopicCreate(
                     name=bt_clean,

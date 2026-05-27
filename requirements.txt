@@ -6,7 +6,6 @@ httpx
 supabase
 python-telegram-bot
 google-genai
-sentence-transformers
 beautifulsoup4
 lxml
 trafilatura
