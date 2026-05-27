@@ -5,7 +5,7 @@ from app.core.config import settings
 
 logger = logging.getLogger("grain.embedder")
 
-URL = "https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent"
+URL = "https://generativelanguage.googleapis.com/v1/models/embedding-001:embedContent"
 
 
 async def embed(text: str) -> List[float]:

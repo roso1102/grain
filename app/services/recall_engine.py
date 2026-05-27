@@ -6,6 +6,7 @@ from app.services.retrieval_engine import search_notes
 from app.services.obsidian_sync import make_shortcode
 from app.integrations.gemini import call_llm
 from app.db.supabase import supabase
+from app.utils.similarity import normalize_similarity
 
 logger = logging.getLogger("grain.recall")
 
@@ -47,7 +48,7 @@ def _build_context_block(results: List[Dict[str, Any]]) -> str:
         summary = (r.get("summary") or "").strip()
         title = (r.get("title") or "").strip()
         source_url = r.get("source_url") or ""
-        similarity = r.get("similarity", 0.0)
+        similarity = normalize_similarity(r.get("similarity", 0.0))
         matched_via = r.get("matched_via", "vector")
 
         entity_names = []

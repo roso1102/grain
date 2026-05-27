@@ -5,6 +5,7 @@ from app.db.supabase import supabase
 from app.services.embedder import embed
 from app.services.entity_extractor import extract_entities
 from app.integrations.gemini import call_llm
+from app.utils.similarity import normalize_similarity
 
 logger = logging.getLogger("grain.retrieval_engine")
 
@@ -167,6 +168,8 @@ async def search_notes(
         ).execute()
 
         results = response.data or []
+        for r in results:
+            r["similarity"] = normalize_similarity(r.get("similarity"))
         if not results:
             logger.info("No semantic search matches found.")
             return []

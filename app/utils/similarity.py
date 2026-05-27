@@ -1,5 +1,27 @@
 import math
-from typing import List
+from typing import Any, List
+
+
+def normalize_similarity(value: Any, default: float = 0.0) -> float:
+    """
+    Sanitizes a similarity value returned by pgvector RPC.
+
+    pgvector can return NaN when query and/or stored vectors are all-zero,
+    and Supabase serialises NaN as the *string* ``"NaN"``.  Feeding that
+    string into a Python format-code like ``:.2f`` raises a
+    ``ValueError``.
+
+    This helper converts ``"NaN"`` (and any other non-float) back to a
+    safe default, then clamps the result to ``[0.0, 1.0]``.
+    """
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return default
+    if math.isnan(v) or math.isinf(v):
+        return default
+    return max(0.0, min(1.0, v))
+
 
 def cosine_similarity(v1: List[float], v2: List[float]) -> float:
     """

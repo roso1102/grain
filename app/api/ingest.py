@@ -18,6 +18,7 @@ from app.db.queries import insert_note
 from app.db.supabase import supabase
 from app.models.note import NoteInput
 from app.integrations.telegram import DraftStream, send_typing, grain_keyboard, send_note_card
+from app.utils.similarity import normalize_similarity
 
 router = APIRouter(tags=["Ingestion"])
 
@@ -427,7 +428,7 @@ async def _handle_ask_command(chat_id: int, query: str) -> None:
 
     reply = f"🔍 *Search: {query}*\n\n"
     for idx, r in enumerate(results[:5], start=1):
-        sim = r.get("similarity", 0.0)
+        sim = normalize_similarity(r.get("similarity", 0.0))
         llm_score = r.get("llm_score")
         topic_name = r.get("topic_name", "General")
         summary = (r.get("summary") or "")[:300]

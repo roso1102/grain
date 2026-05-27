@@ -7,6 +7,7 @@ from app.db.supabase import supabase
 from app.services.embedder import embed
 from app.integrations.gemini import call_llm
 from app.models.relation import RelationCreate
+from app.utils.similarity import normalize_similarity
 
 logger = logging.getLogger("grain.relation_engine")
 
@@ -103,6 +104,8 @@ def get_top_similar_notes(
         ).execute()
 
         results = response.data or []
+        for r in results:
+            r["similarity"] = normalize_similarity(r.get("similarity"))
         # Exclude the note we are comparing against
         return [r for r in results if r["id"] != str(note_id)][:limit]
     except Exception as e:
