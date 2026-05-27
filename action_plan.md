@@ -387,4 +387,64 @@
 
 ---
 
-*Last updated: 2026-05-25*
+## 🔵 Phase 10 — Multi-Tenant Migration
+
+> **Goal:** User isolation with sign-up/sign-in. Multiple people can use Grain, each seeing only their own data.
+
+- [ ] **P10.0** — Create `users` table, `UserSchema`, `app/db/users.py` helpers, auto-register on `/start`  
+  `Completed: 2026-05-27`
+
+- [ ] **P10.1** — Add `user_id` to all data tables (`notes`, `topics`, `entities`, `note_entities`, `relations`, `enrichment_log`, `agent_state`). Drop global UNIQUEs, add per-user `(user_id, name)` UNIQUEs. Add `p_user_id` to `match_notes` RPC. Backfill existing data.  
+  `Completed: ___________`
+
+- [ ] **P10.2** — Update all 22 Python files that make Supabase calls to filter by `user_id`. Wire `user_id` through the entire pipeline from webhook entry to every query.  
+  `Completed: ___________`
+
+- [ ] **P10.3** — Telegram auto-auth: verify `X-Telegram-Bot-Api-Secret-Token` header on webhook. Welcome screen on `/start` with user identity.  
+  `Completed: ___________`
+
+- [ ] **P10.4** — Supabase Auth for web dashboard: JWT verification middleware, `/auth/*` endpoints. Link `users.supabase_user_id` to `auth.users.id`.  
+  `Completed: ___________`
+
+- [ ] **P10.5** — RLS policies on all tables for defense-in-depth. Grace period: remove backward-compat fallbacks, verify no queries bypass `user_id`.  
+  `Completed: ___________`
+
+---
+
+## 🟢 Phase 11 — Web Dashboard
+
+> **Goal:** Visual knowledge browser — browse, search, edit, knowledge graph.
+
+- [ ] **P11.0** — Create new repository, set up SvelteKit/Next.js with Supabase JS client  
+  `Completed: ___________`
+
+- [ ] **P11.1** — Login/signup page using Supabase Auth  
+  `Completed: ___________`
+
+- [ ] **P11.2** — Browse notes by topic, date, entity, facet  
+  `Completed: ___________`
+
+- [ ] **P11.3** — Semantic search bar using `match_notes` RPC  
+  `Completed: ___________`
+
+- [ ] **P11.4** — Note detail page with full Knowledge Card  
+  `Completed: ___________`
+
+- [ ] **P11.5** — Interactive knowledge graph (D3.js / vis.js)  
+  `Completed: ___________`
+
+- [ ] **P11.6** — Inline edit: title, summary, facts, status, topic  
+  `Completed: ___________`
+
+- [ ] **P11.7** — Topic tree with parent/child hierarchy  
+  `Completed: ___________`
+
+- [ ] **P11.8** — Entity browser grouped by type  
+  `Completed: ___________`
+
+- [ ] **P11.9** — Deploy to Vercel free tier  
+  `Completed: ___________`
+
+---
+
+*Last updated: 2026-05-27*
