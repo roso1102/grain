@@ -11,6 +11,7 @@ class NoteBase(BaseModel):
     source_type: Optional[str] = None
     personal_insight: Optional[str] = None
     topic_id: Optional[UUID] = None
+    user_id: Optional[UUID] = None
     embedding: Optional[List[float]] = None
     facets: Optional[Dict[str, List[str]]] = None
 

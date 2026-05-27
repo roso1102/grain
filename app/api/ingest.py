@@ -1,7 +1,8 @@
 import logging
 import time
 from typing import Optional, Any
-from fastapi import APIRouter, Request, BackgroundTasks
+from uuid import UUID
+from fastapi import APIRouter, Request, BackgroundTasks, Depends, Header
 from pydantic import BaseModel
 
 from app.core.logger import logger
@@ -11,7 +12,7 @@ from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
 from app.services.embedder import embed
 from app.services.retrieval_engine import search_notes
-from app.db.users import get_or_create_user_by_chat_id
+from app.db.users import get_or_create_user_by_chat_id, get_user_by_id
 from app.services.relation_engine import build_relations_for_note
 from app.services.enrichment_engine import try_enrich
 from app.db.queries import insert_note
@@ -26,6 +27,21 @@ class ManualIngestRequest(BaseModel):
     text: str
     source_type: str = "manual"
     source_url: Optional[str] = None
+
+# ── Auth helper ───────────────────────────────────────────────────────────
+
+async def resolve_user_id(x_user_id: Optional[str] = Header(None)) -> Optional[UUID]:
+    """Resolves X-User-Id header to a UUID, or returns None if absent/invalid."""
+    if not x_user_id:
+        return None
+    try:
+        user = get_user_by_id(UUID(x_user_id))
+        if user:
+            return user.id
+    except Exception:
+        pass
+    logger.warning(f"Invalid X-User-Id header: {x_user_id}")
+    return None
 
 async def process_telegram_ingestion(
     chat_id: int, 
@@ -53,7 +69,7 @@ async def process_telegram_ingestion(
            clean_input.startswith("/status") or clean_input.startswith("/move") or \
            clean_input.startswith("/recent") or clean_input.startswith("/think"):
             await send_typing(chat_id)
-            await _handle_note_command(chat_id, clean_input)
+            await _handle_note_command(chat_id, clean_input, user_id=user_id)
             return
         
         logger.info(f"Processing Telegram note for chat_id={chat_id}")
@@ -71,7 +87,7 @@ async def process_telegram_ingestion(
         t1 = time.time()
         topic_name = parsed_data["topic_name"]
         broader_topic = parsed_data.get("broader_topic")
-        topic_id, snapped_topic_name = await snap_topic(topic_name, broader_topic=broader_topic)
+        topic_id, snapped_topic_name = await snap_topic(topic_name, broader_topic=broader_topic, user_id=user_id)
         logger.info(f"[TIMING] snap_topic() took {time.time()-t1:.1f}s")
 
         # 3. Generate embedding + enrichment
@@ -84,7 +100,8 @@ async def process_telegram_ingestion(
         was_enriched, enriched_note_id = await try_enrich(
             new_raw_text=parsed_data["raw_text"],
             new_summary=parsed_data["summary"],
-            new_embedding=note_embedding
+            new_embedding=note_embedding,
+            user_id=user_id
         )
 
         logger.info(f"[TIMING] try_enrich() took {time.time()-t3:.1f}s")
@@ -119,7 +136,8 @@ async def process_telegram_ingestion(
             personal_insight=parsed_data["personal_insight"],
             topic_id=topic_id,
             embedding=note_embedding,
-            facets=parsed_data.get("facets") or {}
+            facets=parsed_data.get("facets") or {},
+            user_id=user_id
         )
         saved_note = insert_note(note_input)
         logger.info(f"[TIMING] insert_note() took {time.time()-t4:.1f}s")
@@ -195,7 +213,7 @@ async def process_telegram_ingestion(
         t5 = time.time()
         try:
             from app.services.obsidian_sync import sync_note_to_obsidian
-            await sync_note_to_obsidian(saved_note.id)
+            await sync_note_to_obsidian(saved_note.id, user_id=user_id)
         except Exception as e:
             logger.error(f"Obsidian sync failed: {e}")
         logger.info(f"[TIMING] obsidian_sync() took {time.time()-t5:.1f}s (background)")
@@ -210,15 +228,15 @@ async def process_telegram_ingestion(
                 ent_type = ent.get("type")
                 if ent_name and ent_type:
                     ent_emb = await embed(ent_name)
-                    entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb))
-                    link_note_to_entity(saved_note.id, entity_schema.id)
+                    entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb, user_id=user_id))
+                    link_note_to_entity(saved_note.id, entity_schema.id, user_id=user_id)
         except Exception as e:
             logger.error(f"Entity linking failed: {e}")
         logger.info(f"[TIMING] entity extraction took {time.time()-t6:.1f}s (background)")
 
         t7 = time.time()
         try:
-            edges = await build_relations_for_note(saved_note.id, parsed_data["summary"])
+            edges = await build_relations_for_note(saved_note.id, parsed_data["summary"], user_id=user_id)
             if edges > 0:
                 logger.info(f"Created {edges} relation edge(s).")
         except Exception as e:
@@ -281,7 +299,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             if query and iq_id:
                 from app.services.retrieval_engine import search_notes
                 from app.integrations.telegram import answer_inline_query
-                results = await search_notes(query, limit=5, threshold=0.2)
+                results = await search_notes(query, limit=5, threshold=0.2, user_id=user_id)
                 await answer_inline_query(iq_id, results)
             return {"status": "ok"}
         
@@ -415,7 +433,7 @@ async def _send_help(chat_id: int) -> None:
         await send_message(chat_id, help_text)
 
 
-async def _handle_ask_command(chat_id: int, query: str) -> None:
+async def _handle_ask_command(chat_id: int, query: str, user_id: Optional[UUID] = None) -> None:
     """Semantic search via LLM re-ranker, formatted for Telegram."""
     from app.services.retrieval_engine import search_notes
     from app.services.obsidian_sync import make_shortcode
@@ -450,20 +468,23 @@ async def _handle_ask_command(chat_id: int, query: str) -> None:
     await send_message(chat_id, reply)
 
 
-async def _handle_think_command(chat_id: int, question: str) -> None:
+async def _handle_think_command(chat_id: int, question: str, user_id: Optional[UUID] = None) -> None:
     """Conversational recall: hybrid search + LLM synthesis, returns cited answer."""
     from app.services.recall_engine import recall_answer
 
     await send_typing(chat_id)
-    result = await recall_answer(question, limit=8)
+    result = await recall_answer(question, limit=8, user_id=user_id)
     answer = result["answer"]
     await send_message(chat_id, answer)
 
 
-async def _handle_recent_command(chat_id: int, count: int) -> None:
+async def _handle_recent_command(chat_id: int, count: int, user_id: Optional[UUID] = None) -> None:
     from app.services.obsidian_sync import make_shortcode as mk_shortcode
     from uuid import UUID
-    notes_res = supabase.table("notes").select("id, title, created_at").order("created_at", desc=True).limit(count).execute()
+    query = supabase.table("notes").select("id, title, created_at").order("created_at", desc=True).limit(count)
+    if user_id:
+        query = query.eq("user_id", str(user_id))
+    notes_res = query.execute()
     note_rows = notes_res.data or []
     if not note_rows:
         await send_message(chat_id, "📭 No notes yet.")
@@ -480,7 +501,7 @@ async def _handle_recent_command(chat_id: int, count: int) -> None:
         await send_message(chat_id, reply)
 
 
-async def _handle_note_command(chat_id: int, text: str) -> None:
+async def _handle_note_command(chat_id: int, text: str, user_id: Optional[UUID] = None) -> None:
     """
     Handles Telegram commands for editing notes.
     /note <shortcode>           → Show note
@@ -531,7 +552,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
 
     cmd = parts[0].lower()
     shortcode = parts[1]
-    note_id = resolve_shortcode(shortcode)
+    note_id = resolve_shortcode(shortcode, user_id=user_id)
 
     if not note_id:
         await send_message(chat_id, f"❌ No note found with ID `{shortcode}`")
@@ -574,7 +595,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
     # ── /delete ──────────────────────────────────────────────────────────
     if cmd == "/delete":
         supabase.table("notes").delete().eq("id", str(note_id)).execute()
-        await delete_note_from_obsidian(note_id)
+        await delete_note_from_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"🗑️ Note `{shortcode}` deleted.")
         return
 
@@ -585,7 +606,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
             return
         new_title = parts[2].strip()
         supabase.table("notes").update({"title": new_title}).eq("id", str(note_id)).execute()
-        await sync_note_to_obsidian(note_id)
+        await sync_note_to_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"✏️ Note `{shortcode}` retitled to: {new_title}")
         return
 
@@ -615,7 +636,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
                 # Facts was the last section, append at end
                 new_lines.append(f"• {new_fact}")
             supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).execute()
-            await sync_note_to_obsidian(note_id)
+            await sync_note_to_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"✅ Fact added to `{shortcode}`")
         return
 
@@ -658,7 +679,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
 
         supabase.table("notes").update(update_data).eq("id", str(note_id)).execute()
 
-        await sync_note_to_obsidian(note_id)
+        await sync_note_to_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"✅ Note `{shortcode}` updated with new content.")
         return
 
@@ -689,7 +710,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
         if not replaced:
             new_lines.append(f"\n**Status:** {new_status}")
         supabase.table("notes").update({"summary": "\n".join(new_lines)}).eq("id", str(note_id)).execute()
-        await sync_note_to_obsidian(note_id)
+        await sync_note_to_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"📊 Status for `{shortcode}` set to: {new_status}")
         return
 
@@ -699,9 +720,9 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
             await send_message(chat_id, "⚠️ Usage: `/move <ID> <new topic name>`")
             return
         new_topic = parts[2].strip()
-        topic_id, snapped_name = await snap_topic(new_topic)
+        topic_id, snapped_name = await snap_topic(new_topic, user_id=user_id)
         supabase.table("notes").update({"topic_id": str(topic_id)}).eq("id", str(note_id)).execute()
-        await sync_note_to_obsidian(note_id)
+        await sync_note_to_obsidian(note_id, user_id=user_id)
         await send_message(chat_id, f"📂 Note `{shortcode}` moved to topic: {snapped_name}")
         return
 
@@ -711,7 +732,7 @@ async def _handle_note_command(chat_id: int, text: str) -> None:
 
     await send_message(chat_id, f"⚠️ Unknown command: {cmd}")
 
-async def process_entity_extraction_bg(note_id: Any, entities: list):
+async def process_entity_extraction_bg(note_id: Any, entities: list, user_id: Optional[UUID] = None):
     """Background task to embed and store pre-extracted entities for manually ingested notes."""
     try:
         from app.db.queries import upsert_entity, link_note_to_entity
@@ -722,13 +743,17 @@ async def process_entity_extraction_bg(note_id: Any, entities: list):
             ent_type = ent.get("type")
             if ent_name and ent_type:
                 ent_emb = await embed(ent_name)
-                entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb))
-                link_note_to_entity(note_id, entity_schema.id)
+                entity_schema = upsert_entity(EntityCreate(name=ent_name, type=ent_type, embedding=ent_emb, user_id=user_id))
+                link_note_to_entity(note_id, entity_schema.id, user_id=user_id)
     except Exception as e:
         logger.error(f"Failed background entity extraction for note {note_id}: {e}", exc_info=True)
 
 @router.post("/ingest-note")
-async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTasks):
+async def ingest_note(
+    req: ManualIngestRequest,
+    background_tasks: BackgroundTasks,
+    user_id: Optional[UUID] = Depends(resolve_user_id),
+):
     """
     API endpoint to manually ingest a note without Telegram.
     """
@@ -737,7 +762,7 @@ async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTask
         topic_name = parsed_data["topic_name"]
         
         # Snap topic
-        topic_id, snapped_topic_name = await snap_topic(topic_name)
+        topic_id, snapped_topic_name = await snap_topic(topic_name, user_id=user_id)
         
         # Generate summary embedding
         note_embedding = await embed(parsed_data["summary"])
@@ -751,14 +776,16 @@ async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTask
             personal_insight=parsed_data["personal_insight"],
             topic_id=topic_id,
             embedding=note_embedding,
-            facets=parsed_data.get("facets") or {}
+            facets=parsed_data.get("facets") or {},
+            user_id=user_id
         )
         
         # Enrichment check — merge if near-duplicate exists (sim >= 0.88)
         was_enriched, enriched_note_id = await try_enrich(
             new_raw_text=parsed_data["raw_text"],
             new_summary=parsed_data["summary"],
-            new_embedding=note_embedding
+            new_embedding=note_embedding,
+            user_id=user_id
         )
 
         if was_enriched and enriched_note_id:
@@ -776,13 +803,13 @@ async def ingest_note(req: ManualIngestRequest, background_tasks: BackgroundTask
         
         # Sync note to Obsidian in background
         from app.services.obsidian_sync import sync_note_to_obsidian
-        background_tasks.add_task(sync_note_to_obsidian, saved_note.id)
+        background_tasks.add_task(sync_note_to_obsidian, saved_note.id, user_id)
         
         # Extract and link entities in background
-        background_tasks.add_task(process_entity_extraction_bg, saved_note.id, parsed_data.get("entities", []))
+        background_tasks.add_task(process_entity_extraction_bg, saved_note.id, parsed_data.get("entities", []), user_id)
 
         # Build memory graph relations in background
-        background_tasks.add_task(build_relations_for_note, saved_note.id, parsed_data["summary"])
+        background_tasks.add_task(build_relations_for_note, saved_note.id, parsed_data["summary"], user_id)
         
         return {
             "status": "success",

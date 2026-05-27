@@ -18,14 +18,17 @@ RELATION_SIMILARITY_THRESHOLD = 0.75
 VALID_RELATION_TYPES = {"related_to", "extends", "contradicts", "depends_on"}
 
 
-def _insert_relation(source_id: UUID, target_id: UUID, relation_type: str, score: float) -> None:
+def _insert_relation(source_id: UUID, target_id: UUID, relation_type: str, score: float, user_id: Optional[UUID] = None) -> None:
     """Inserts a single relation edge into the relations table."""
-    supabase.table("relations").upsert({
+    data = {
         "source_note_id": str(source_id),
         "target_note_id": str(target_id),
         "relation_type": relation_type,
         "score": round(score, 4)
-    }).execute()
+    }
+    if user_id:
+        data["user_id"] = str(user_id)
+    supabase.table("relations").upsert(data).execute()
 
 
 async def batch_classify_relations(source_summary: str, candidates: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -87,21 +90,22 @@ def get_top_similar_notes(
     note_id: UUID,
     note_embedding: List[float],
     limit: int = 5,
-    threshold: float = RELATION_SIMILARITY_THRESHOLD
+    threshold: float = RELATION_SIMILARITY_THRESHOLD,
+    user_id: Optional[UUID] = None
 ) -> List[Dict[str, Any]]:
     """
     Finds the top-k most similar existing notes via pgvector ANN search,
     excluding the source note itself.
     """
     try:
-        response = supabase.rpc(
-            "match_notes",
-            {
-                "query_embedding": note_embedding,
-                "match_threshold": threshold,
-                "match_count": limit + 1  # +1 to account for the note itself
-            }
-        ).execute()
+        params = {
+            "query_embedding": note_embedding,
+            "match_threshold": threshold,
+            "match_count": limit + 1  # +1 to account for the note itself
+        }
+        if user_id:
+            params["p_user_id"] = str(user_id)
+        response = supabase.rpc("match_notes", params).execute()
 
         results = response.data or []
         for r in results:
@@ -113,7 +117,7 @@ def get_top_similar_notes(
         return []
 
 
-async def build_relations_for_note(note_id: UUID, summary: str) -> int:
+async def build_relations_for_note(note_id: UUID, summary: str, user_id: Optional[UUID] = None) -> int:
     """
     Core entry point of the relation engine.
     
@@ -140,7 +144,7 @@ async def build_relations_for_note(note_id: UUID, summary: str) -> int:
     note_embedding = await embed(summary)
 
     # 2. Find top similar notes above threshold
-    similar_notes = get_top_similar_notes(note_id, note_embedding)
+    similar_notes = get_top_similar_notes(note_id, note_embedding, user_id=user_id)
 
     if not similar_notes:
         logger.info(f"No similar notes found above threshold for note {note_id}.")
@@ -170,7 +174,8 @@ async def build_relations_for_note(note_id: UUID, summary: str) -> int:
             source_id=note_id,
             target_id=UUID(candidate_id),
             relation_type=relation_type,
-            score=similarity
+            score=similarity,
+            user_id=user_id
         )
         logger.info(f"Inserted relation '{relation_type}' between {note_id} and {candidate_id}.")
         edges_created += 1

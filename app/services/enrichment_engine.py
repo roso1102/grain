@@ -79,6 +79,7 @@ async def try_enrich(
     new_raw_text: str,
     new_summary: str,
     new_embedding: list,
+    user_id: Optional[UUID] = None,
 ) -> Tuple[bool, Optional[UUID]]:
     """
     Phase 6 Enrichment Engine entry point.
@@ -113,7 +114,8 @@ async def try_enrich(
         # 1. Search for an existing note above the similarity threshold
         existing_note: Optional[NoteOutput] = find_near_duplicate_note(
             embedding=new_embedding,
-            threshold=ENRICHMENT_THRESHOLD
+            threshold=ENRICHMENT_THRESHOLD,
+            user_id=user_id
         )
 
         if not existing_note:
@@ -157,7 +159,8 @@ async def try_enrich(
         log_enrichment(
             source_note_id=existing_note.id,
             old_summary=old_summary,
-            new_summary=merged_summary
+            new_summary=merged_summary,
+            user_id=user_id
         )
         logger.info(f"Enrichment merge logged for note {existing_note.id}.")
 

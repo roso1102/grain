@@ -11,12 +11,12 @@ from app.models.topic import TopicCreate
 logger = logging.getLogger("grain.topic_snapper")
 
 
-def compute_topic_centroid(topic_id: UUID) -> Optional[List[float]]:
+def compute_topic_centroid(topic_id: UUID, user_id: Optional[UUID] = None) -> Optional[List[float]]:
     """
     Computes the centroid embedding of all notes under a topic.
     Returns the averaged embedding vector, or None if no notes with embeddings exist.
     """
-    notes = get_notes_by_topic_id(topic_id)
+    notes = get_notes_by_topic_id(topic_id, user_id=user_id)
     embeddings = []
     for note in notes:
         emb = note.get("embedding")
@@ -45,6 +45,7 @@ def compute_topic_centroid(topic_id: UUID) -> Optional[List[float]]:
 async def snap_topic(
     proposed_name: str,
     broader_topic: Optional[str] = None,
+    user_id: Optional[UUID] = None,
 ) -> Tuple[UUID, str]:
     """
     Checks if a topic with a similar semantic meaning already exists.
@@ -63,7 +64,7 @@ async def snap_topic(
     if broader_topic and broader_topic.strip():
         bt_clean = broader_topic.strip()
         # Try to find existing broader topic
-        parent_topic = get_topic_by_name(bt_clean)
+        parent_topic = get_topic_by_name(bt_clean, user_id=user_id)
         if parent_topic:
             parent_id = parent_topic.id
         else:
@@ -73,7 +74,8 @@ async def snap_topic(
                 new_parent = insert_topic(TopicCreate(
                     name=bt_clean,
                     description=f"Broad category for {bt_clean}",
-                    embedding=bt_emb
+                    embedding=bt_emb,
+                    user_id=user_id,
                 ))
                 parent_id = new_parent.id
             except Exception as e:
@@ -84,7 +86,7 @@ async def snap_topic(
 
     # 2. Get all existing topics
     try:
-        existing_topics = get_all_topics()
+        existing_topics = get_all_topics(user_id=user_id)
     except Exception as e:
         logger.error(f"Error fetching topics from DB: {e}")
         existing_topics = []
@@ -101,7 +103,7 @@ async def snap_topic(
         # Prefer centroid-based comparison when possible
         candidate_embedding = None
         if topic.id:
-            centroid = compute_topic_centroid(topic.id)
+            centroid = compute_topic_centroid(topic.id, user_id=user_id)
             if centroid:
                 candidate_embedding = centroid
 
@@ -147,6 +149,7 @@ async def snap_topic(
                 existing_topic_name=best_match_topic.name,
                 existing_topic_id=best_match_topic.id,
                 similarity=best_similarity,
+                user_id=user_id,
             )
             action = review.get("action", "separate")
             if action == "merge":
@@ -167,11 +170,12 @@ async def snap_topic(
                         description=f"Automated topic subtopic under {best_match_topic.name}",
                         embedding=proposed_embedding,
                         parent_id=best_match_topic.id,
+                        user_id=user_id,
                     ))
                     return new_topic.id, new_topic.name
                 except Exception as e:
                     logger.error(f"Failed to insert new topic '{proposed_name_clean}': {e}")
-                    existing = get_topic_by_name(proposed_name_clean)
+                    existing = get_topic_by_name(proposed_name_clean, user_id=user_id)
                     if existing:
                         return existing.id, existing.name
                     raise e
@@ -191,11 +195,12 @@ async def snap_topic(
             description=f"Automated topic category for {proposed_name_clean}",
             embedding=proposed_embedding,
             parent_id=parent_id,
+            user_id=user_id,
         ))
         return new_topic.id, new_topic.name
     except Exception as e:
         logger.error(f"Failed to insert new topic '{proposed_name_clean}': {e}")
-        existing = get_topic_by_name(proposed_name_clean)
+        existing = get_topic_by_name(proposed_name_clean, user_id=user_id)
         if existing:
             return existing.id, existing.name
         raise e

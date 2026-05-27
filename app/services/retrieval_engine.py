@@ -12,7 +12,8 @@ logger = logging.getLogger("grain.retrieval_engine")
 
 def _get_graph_expanded_notes(
     matched_ids: List[str],
-    limit: int = 3
+    limit: int = 3,
+    user_id: Optional[UUID] = None
 ) -> List[Dict[str, Any]]:
     """
     Traverses the relations table to pull in 1-hop connected notes
@@ -143,7 +144,8 @@ async def _llm_rerank(
 async def search_notes(
     query_text: str,
     limit: int = 5,
-    threshold: float = 0.3
+    threshold: float = 0.3,
+    user_id: Optional[UUID] = None
 ) -> List[Dict[str, Any]]:
     """
     Performs semantic vector similarity search across all notes in Supabase,
@@ -158,14 +160,14 @@ async def search_notes(
         query_embedding = await embed(query_text)
 
         # 2. Call pgvector RPC matching function
-        response = supabase.rpc(
-            "match_notes",
-            {
-                "query_embedding": query_embedding,
-                "match_threshold": threshold,
-                "match_count": limit
-            }
-        ).execute()
+        params = {
+            "query_embedding": query_embedding,
+            "match_threshold": threshold,
+            "match_count": limit
+        }
+        if user_id:
+            params["p_user_id"] = str(user_id)
+        response = supabase.rpc("match_notes", params).execute()
 
         results = response.data or []
         for r in results:
@@ -207,7 +209,7 @@ async def search_notes(
         # 4. Graph Expansion — pull in 1-hop related notes not already matched
         try:
             matched_ids = [r["id"] for r in results]
-            graph_notes = _get_graph_expanded_notes(matched_ids, limit=3)
+            graph_notes = _get_graph_expanded_notes(matched_ids, limit=3, user_id=user_id)
             if graph_notes:
                 logger.info(f"Graph expansion added {len(graph_notes)} additional note(s).")
                 results.extend(graph_notes)

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from uuid import UUID
 
 from app.services.retrieval_engine import search_notes
@@ -107,9 +107,9 @@ def _build_context_block(results: List[Dict[str, Any]]) -> str:
     return "\n".join(blocks)
 
 
-async def recall_answer(question: str, limit: int = 8) -> Dict[str, Any]:
+async def recall_answer(question: str, limit: int = 8, user_id: Optional[UUID] = None) -> Dict[str, Any]:
     logger.info(f"Recall: searching for '{question}'")
-    results = await search_notes(question, limit=limit, threshold=0.15)
+    results = await search_notes(question, limit=limit, threshold=0.15, user_id=user_id)
     if not results:
         logger.info("Recall: no results found")
         return {

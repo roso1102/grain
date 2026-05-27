@@ -6,6 +6,7 @@ class TopicBase(BaseModel):
     name: str
     parent_id: Optional[UUID] = None
     description: Optional[str] = None
+    user_id: Optional[UUID] = None
     embedding: Optional[List[float]] = None
 
     @field_validator("embedding", mode="before")

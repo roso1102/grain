@@ -39,9 +39,12 @@ def get_note_by_id(note_id: UUID) -> Optional[NoteOutput]:
         return None
     return NoteOutput(**result.data[0])
 
-def get_all_topics() -> List[TopicSchema]:
-    """Retrieves all topics from the database."""
-    result = supabase.table("topics").select("*").execute()
+def get_all_topics(user_id: Optional[UUID] = None) -> List[TopicSchema]:
+    """Retrieves all topics from the database, optionally filtered by user."""
+    query = supabase.table("topics").select("*")
+    if user_id:
+        query = query.eq("user_id", str(user_id))
+    result = query.execute()
     return [TopicSchema(**row) for row in result.data]
 
 def insert_topic(topic: TopicCreate) -> TopicSchema:
@@ -52,46 +55,64 @@ def insert_topic(topic: TopicCreate) -> TopicSchema:
         raise Exception("Failed to insert topic into Supabase")
     return TopicSchema(**result.data[0])
 
-def get_topic_by_name(name: str) -> Optional[TopicSchema]:
-    """Retrieves a topic by its unique name."""
-    result = supabase.table("topics").select("*").eq("name", name).execute()
+def get_topic_by_name(name: str, user_id: Optional[UUID] = None) -> Optional[TopicSchema]:
+    """Retrieves a topic by its name, optionally scoped to a user."""
+    query = supabase.table("topics").select("*").eq("name", name)
+    if user_id:
+        query = query.eq("user_id", str(user_id))
+    result = query.execute()
     if not result.data:
         return None
     return TopicSchema(**result.data[0])
 
-def get_notes_by_topic_id(topic_id: UUID, limit: int = 200) -> list:
+def get_notes_by_topic_id(topic_id: UUID, user_id: Optional[UUID] = None, limit: int = 200) -> list:
     """Retrieves notes belonging to a specific topic, with their embeddings."""
-    result = supabase.table("notes").select("id, embedding").eq("topic_id", str(topic_id)).limit(limit).execute()
+    query = supabase.table("notes").select("id, embedding").eq("topic_id", str(topic_id))
+    if user_id:
+        query = query.eq("user_id", str(user_id))
+    result = query.limit(limit).execute()
     return result.data or []
 
 def upsert_entity(entity: EntityCreate) -> EntitySchema:
     """
-    Checks if an entity with the same name already exists in the database.
+    Checks if an entity with the same name already exists (optionally scoped by user).
     If yes, returns the existing entity.
     If no, inserts the new entity and returns it.
     """
-    result = supabase.table("entities").select("*").eq("name", entity.name).execute()
+    query = supabase.table("entities").select("*").eq("name", entity.name)
+    if entity.user_id:
+        query = query.eq("user_id", str(entity.user_id))
+    result = query.execute()
     if result.data:
         return EntitySchema(**result.data[0])
-        
+
     data = entity.model_dump(mode="json", exclude_none=True)
     insert_res = supabase.table("entities").insert(data).execute()
     if not insert_res.data:
         raise Exception(f"Failed to insert entity '{entity.name}' into Supabase")
     return EntitySchema(**insert_res.data[0])
 
-def link_note_to_entity(note_id: UUID, entity_id: UUID, confidence: float = 1.0) -> None:
+def link_note_to_entity(
+    note_id: UUID,
+    entity_id: UUID,
+    user_id: Optional[UUID] = None,
+    confidence: float = 1.0
+) -> None:
     """Links a note to an entity in the note_entities table."""
-    supabase.table("note_entities").upsert({
+    data = {
         "note_id": str(note_id),
         "entity_id": str(entity_id),
         "confidence": confidence
-    }).execute()
+    }
+    if user_id:
+        data["user_id"] = str(user_id)
+    supabase.table("note_entities").upsert(data).execute()
 
 def find_near_duplicate_note(
     embedding: List[float],
     threshold: float = 0.88,
-    exclude_id: Optional[UUID] = None
+    exclude_id: Optional[UUID] = None,
+    user_id: Optional[UUID] = None
 ) -> Optional[NoteOutput]:
     """
     Searches for an existing note whose embedding is above the given similarity
@@ -100,14 +121,14 @@ def find_near_duplicate_note(
     Returns the most similar existing note, or None if no match found.
     """
     try:
-        response = supabase.rpc(
-            "match_notes",
-            {
-                "query_embedding": embedding,
-                "match_threshold": threshold,
-                "match_count": 2  # fetch 2 in case top result is the note itself
-            }
-        ).execute()
+        params = {
+            "query_embedding": embedding,
+            "match_threshold": threshold,
+            "match_count": 2  # fetch 2 in case top result is the note itself
+        }
+        if user_id:
+            params["p_user_id"] = str(user_id)
+        response = supabase.rpc("match_notes", params).execute()
 
         matches = response.data or []
         for match in matches:
@@ -137,13 +158,17 @@ def update_note_content(
 def log_enrichment(
     source_note_id: UUID,
     old_summary: str,
-    new_summary: str
+    new_summary: str,
+    user_id: Optional[UUID] = None
 ) -> None:
     """
     Records a merge event in the enrichment_log table for audit/traceability.
     """
-    supabase.table("enrichment_log").insert({
+    data = {
         "source_note_id": str(source_note_id),
         "old_summary": old_summary,
         "new_summary": new_summary
-    }).execute()
+    }
+    if user_id:
+        data["user_id"] = str(user_id)
+    supabase.table("enrichment_log").insert(data).execute()

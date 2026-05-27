@@ -1,8 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, Header
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
+from uuid import UUID
+
 from app.services.retrieval_engine import search_notes
 from app.utils.ranking import rank_search_results
+from app.db.users import get_user_by_id
 
 router = APIRouter(prefix="/search", tags=["Search"])
 
@@ -23,8 +26,25 @@ class SearchResult(BaseModel):
     similarity: float
     matched_via: Optional[str] = None
 
+
+async def _resolve_user_id(x_user_id: Optional[str] = Header(None)) -> Optional[UUID]:
+    """Resolves X-User-Id header to a UUID, or returns None if absent/invalid."""
+    if not x_user_id:
+        return None
+    try:
+        user = get_user_by_id(UUID(x_user_id))
+        if user:
+            return user.id
+    except Exception:
+        pass
+    return None
+
+
 @router.post("", response_model=List[SearchResult])
-async def semantic_search(req: SearchRequest):
+async def semantic_search(
+    req: SearchRequest,
+    user_id: Optional[UUID] = Depends(_resolve_user_id),
+):
     """
     API endpoint that performs semantic vector search on captured knowledge.
     """
@@ -32,7 +52,8 @@ async def semantic_search(req: SearchRequest):
         raw_results = await search_notes(
             req.query, 
             limit=req.limit, 
-            threshold=req.threshold
+            threshold=req.threshold,
+            user_id=user_id,
         )
         ranked = rank_search_results(raw_results)
         

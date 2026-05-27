@@ -41,10 +41,13 @@ def make_shortcode(note_id: UUID) -> str:
         val //= 62
     return "".join(reversed(code))
 
-def resolve_shortcode(code: str) -> Optional[UUID]:
+def resolve_shortcode(code: str, user_id: Optional[UUID] = None) -> Optional[UUID]:
     """Resolves a shortcode back to a UUID by checking all notes (O(n), but fast enough for personal use)."""
     try:
-        notes = supabase.table("notes").select("id").execute()
+        query = supabase.table("notes").select("id")
+        if user_id:
+            query = query.eq("user_id", str(user_id))
+        notes = query.execute()
         for row in (notes.data or []):
             if make_shortcode(UUID(row["id"])) == code:
                 return UUID(row["id"])
@@ -62,12 +65,15 @@ def vault_dir() -> Path:
 
 # ── Note filename ────────────────────────────────────────────────────────────
 
-def _get_existing_wikilink_targets() -> dict:
+def _get_existing_wikilink_targets(user_id: Optional[UUID] = None) -> dict:
     """Returns a lookup: lowercase target → wikilink target for resolution.
     Only maps to actual note filenames — entities and facets are handled by tags, not separate pages."""
     targets = {}
     try:
-        result = supabase.table("notes").select("id, title, topic_id").execute()
+        query = supabase.table("notes").select("id, title, topic_id")
+        if user_id:
+            query = query.eq("user_id", str(user_id))
+        result = query.execute()
         topic_cache = {}
         for row in (result.data or []):
             title = row.get("title") or ""
@@ -115,6 +121,7 @@ def _render_markdown(
     personal_insight: Optional[str],
     raw_text: str,
     created_at: datetime,
+    user_id: Optional[UUID] = None,
 ) -> str:
     """
     Renders a complete .md file with YAML frontmatter and Knowledge Card body.
@@ -138,7 +145,7 @@ def _render_markdown(
     entity_names = [e.get("name", "") for e in (entities or []) if e.get("name")]
 
     # ── Smart backlinking: wikilink targets that exist as notes or entities ──
-    existing_targets = _get_existing_wikilink_targets()
+    existing_targets = _get_existing_wikilink_targets(user_id=user_id)
 
     # ── Build body ────────────────────────────────────────────────────────
     body_parts = []
@@ -212,7 +219,7 @@ def _render_markdown(
 
 # ── Main sync function ───────────────────────────────────────────────────────
 
-async def sync_note_to_obsidian(note_id: UUID) -> None:
+async def sync_note_to_obsidian(note_id: UUID, user_id: Optional[UUID] = None) -> None:
     """
     Fetches a note from Supabase and writes/overwrites its .md file in the vault.
     Also regenerates indexes (MOC, entities, facets).
@@ -315,6 +322,7 @@ async def sync_note_to_obsidian(note_id: UUID) -> None:
             personal_insight=note.personal_insight,
             raw_text=note.raw_text,
             created_at=note.created_at,
+            user_id=user_id,
         )
 
         out_path = vault_dir() / _note_filename(topic_name, title)
@@ -322,13 +330,13 @@ async def sync_note_to_obsidian(note_id: UUID) -> None:
         logger.info(f"Wrote {len(content)} bytes to {out_path}")
 
         # Regenerate indexes
-        _sync_indexes()
+        _sync_indexes(user_id=user_id)
 
     except Exception as e:
         logger.error(f"Obsidian sync failed for note {note_id}: {e}", exc_info=True)
 
 
-async def delete_note_from_obsidian(note_id: UUID) -> bool:
+async def delete_note_from_obsidian(note_id: UUID, user_id: Optional[UUID] = None) -> bool:
     """Removes a note's .md file from the vault. Returns True if deleted."""
     try:
         note = get_note_by_id(note_id)

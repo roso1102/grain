@@ -26,12 +26,15 @@ logger = logging.getLogger("grain.topic_review")
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _get_sample_notes(topic_id: UUID, max_notes: int = 3) -> List[Dict[str, Any]]:
+def _get_sample_notes(topic_id: UUID, max_notes: int = 3, user_id: Optional[UUID] = None) -> List[Dict[str, Any]]:
     """Fetches a small sample of notes under a topic for LLM context."""
     try:
-        result = supabase.table("notes").select(
+        query = supabase.table("notes").select(
             "id, title, summary"
-        ).eq("topic_id", str(topic_id)).limit(max_notes).execute()
+        ).eq("topic_id", str(topic_id))
+        if user_id:
+            query = query.eq("user_id", str(user_id))
+        result = query.limit(max_notes).execute()
         return result.data or []
     except Exception as e:
         logger.warning(f"Failed to fetch sample notes for topic {topic_id}: {e}")
@@ -45,6 +48,7 @@ async def review_topic_merge(
     existing_topic_name: str,
     existing_topic_id: UUID,
     similarity: float,
+    user_id: Optional[UUID] = None,
 ) -> Dict[str, Any]:
     """
     Asks the LLM to decide whether a proposed topic should merge into an
@@ -63,7 +67,7 @@ async def review_topic_merge(
           - target_topic_name: str (same as existing_topic_name on merge/broader)
     """
     # Gather context — sample notes so the LLM can judge by content, not just name
-    sample_notes = _get_sample_notes(existing_topic_id, max_notes=3)
+    sample_notes = _get_sample_notes(existing_topic_id, max_notes=3, user_id=user_id)
     notes_context = ""
     if sample_notes:
         parts = []

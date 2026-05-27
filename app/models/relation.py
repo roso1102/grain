@@ -8,6 +8,7 @@ class RelationBase(BaseModel):
     target_note_id: UUID
     relation_type: str  # 'related_to' | 'extends' | 'contradicts' | 'depends_on'
     score: float = 1.0
+    user_id: Optional[UUID] = None
 
 
 class RelationCreate(RelationBase):

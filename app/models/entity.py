@@ -5,6 +5,7 @@ from uuid import UUID
 class EntityBase(BaseModel):
     name: str
     type: str # 'concept' | 'technology' | 'project' | 'person'
+    user_id: Optional[UUID] = None
     embedding: Optional[List[float]] = None
 
     @field_validator("embedding", mode="before")

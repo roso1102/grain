@@ -26,13 +26,14 @@ async def _ensure_dimension(conn) -> None:
         )
         logger.info(f"  Altered {table}.embedding → vector({EXPECTED_DIM})")
 
-    # Recreate match_notes with correct dimension
+    # Recreate match_notes with correct dimension and user_id support
     await conn.execute(
         f"""
         CREATE OR REPLACE FUNCTION match_notes (
           query_embedding vector({EXPECTED_DIM}),
           match_threshold float,
-          match_count int
+          match_count int,
+          p_user_id UUID DEFAULT NULL
         )
         RETURNS TABLE (
           id UUID,
@@ -61,7 +62,9 @@ async def _ensure_dimension(conn) -> None:
             (1 - (notes.embedding <=> query_embedding))::float AS similarity
           FROM notes
           LEFT JOIN topics ON notes.topic_id = topics.id
-          WHERE notes.embedding IS NOT NULL AND 1 - (notes.embedding <=> query_embedding) > match_threshold
+          WHERE notes.embedding IS NOT NULL
+            AND 1 - (notes.embedding <=> query_embedding) > match_threshold
+            AND (p_user_id IS NULL OR notes.user_id = p_user_id)
           ORDER BY notes.embedding <=> query_embedding
           LIMIT match_count;
         END;
