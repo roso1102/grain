@@ -5,20 +5,20 @@ from app.core.config import settings
 
 logger = logging.getLogger("grain.embedder")
 
-URL = "https://generativelanguage.googleapis.com/v1/models/gemini-embedding-exp-002:embedContent"
+URL = "https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:embedContent"
 
 
 async def embed(text: str) -> List[float]:
     """
-    Generates a 768-dimensional normalized embedding via Gemini's
-    gemini-embedding-exp-002 REST API.  Falls back to a zero vector on failure.
+    Generates a 768-dimensional normalized embedding via Geminis's
+    gemini-embedding-001 REST API.  Falls back to a zero vector on failure.
     """
     if not text or not text.strip():
         return [0.0] * 768
 
     try:
         payload = {
-            "model": "models/gemini-embedding-exp-002",
+            "model": "models/gemini-embedding-001",
             "content": {"parts": [{"text": text}]},
         }
         async with httpx.AsyncClient() as client:
