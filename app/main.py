@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from app.core.logger import logger
 from app.core.config import settings
 from app.api import health, ingest, search, graph, facets
+from app.db.migrate import run_pending as run_migrations
 
 app = FastAPI(
     title="Grain - Personal Knowledge Operating System",
@@ -20,6 +21,7 @@ app.include_router(facets.router)
 async def startup_event():
     logger.info("Starting up Grain PKOS...")
     logger.info(f"Loaded config. Host: {settings.HOST}:{settings.PORT}")
+    await run_migrations()
 
 @app.on_event("shutdown")
 async def shutdown_event():

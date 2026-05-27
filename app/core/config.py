@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # API credentials
     SUPABASE_URL: str
     SUPABASE_KEY: str
+    DATABASE_URL: str = ""  # Direct Postgres connection string for running migrations
     GEMINI_API_KEY: str
     TELEGRAM_BOT_TOKEN: str
     GROQ_API_KEY: Optional[str] = None
