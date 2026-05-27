@@ -61,6 +61,9 @@ async def run_pending() -> None:
                 )
 
         logger.info("All pending migrations applied successfully")
+
+        # Refresh PostgREST schema cache so the API picks up DDL changes
+        await conn.execute("NOTIFY pgrst, 'reload schema'")
     except Exception:
         logger.exception("Migration failed")
         raise
