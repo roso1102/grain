@@ -1,4 +1,10 @@
--- Create match_notes function for pgvector similarity search
+-- Migration 011: Bump embedding dimensions from 768 to 3072 (gemini-embedding-001)
+
+ALTER TABLE topics ALTER COLUMN embedding TYPE vector(3072);
+ALTER TABLE notes ALTER COLUMN embedding TYPE vector(3072);
+ALTER TABLE entities ALTER COLUMN embedding TYPE vector(3072);
+
+-- Recreate match_notes function with updated dimension
 CREATE OR REPLACE FUNCTION match_notes (
   query_embedding vector(3072),
   match_threshold float,

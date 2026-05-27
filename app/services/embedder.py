@@ -5,16 +5,18 @@ from app.core.config import settings
 
 logger = logging.getLogger("grain.embedder")
 
+DIM = 3072
+
 URL = "https://generativelanguage.googleapis.com/v1/models/gemini-embedding-001:embedContent"
 
 
 async def embed(text: str) -> List[float]:
     """
-    Generates a 768-dimensional normalized embedding via Geminis's
+    Generates a 3072-dimensional normalized embedding via Geminis's
     gemini-embedding-001 REST API.  Falls back to a zero vector on failure.
     """
     if not text or not text.strip():
-        return [0.0] * 768
+        return [0.0] * DIM
 
     try:
         payload = {
@@ -33,4 +35,4 @@ async def embed(text: str) -> List[float]:
             return [float(v) for v in data["embedding"]["values"]]
     except Exception as e:
         logger.error(f"Gemini embedding failed: {e}")
-        return [0.0] * 768
+        return [0.0] * DIM

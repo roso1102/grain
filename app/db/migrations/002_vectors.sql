@@ -2,6 +2,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Add embedding columns to topics and notes tables
--- Gemini text-embedding-004 produces 768-dimensional vectors
-ALTER TABLE topics ADD COLUMN IF NOT EXISTS embedding vector(768);
-ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(768);
+-- Gemini gemini-embedding-001 produces 3072-dimensional vectors
+ALTER TABLE topics ADD COLUMN IF NOT EXISTS embedding vector(3072);
+ALTER TABLE notes ADD COLUMN IF NOT EXISTS embedding vector(3072);
