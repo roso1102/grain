@@ -13,13 +13,13 @@ from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
 from app.services.embedder import embed
 from app.services.retrieval_engine import search_notes
-from app.db.users import get_or_create_user_by_chat_id, get_user_by_id
+from app.db.users import get_user_by_chat_id, get_user_by_id
 from app.services.relation_engine import build_relations_for_note
 from app.services.enrichment_engine import try_enrich
 from app.db.queries import insert_note
 from app.db.supabase import supabase
 from app.models.note import NoteInput
-from app.integrations.telegram import DraftStream, send_typing, grain_keyboard, send_note_card
+from app.integrations.telegram import DraftStream, send_typing, grain_keyboard, send_note_card, login_keyboard
 from app.utils.similarity import normalize_similarity
 
 router = APIRouter(tags=["Ingestion"])
@@ -267,6 +267,24 @@ def _set_note_count(chat_id: int, count: int) -> None:
 _pending_actions: dict = {}
 
 
+def _login_prompt() -> str:
+    return (
+        "🔒 *Login required*\n\n"
+        "Please sign in on the Grain dashboard first, then come back here.\n"
+        "Tap the button below to open the login page."
+    )
+
+
+async def _ensure_linked_user(chat_id: int) -> Optional[UUID]:
+    try:
+        user = get_user_by_chat_id(chat_id)
+        if user:
+            return user.id
+    except Exception as e:
+        logger.warning(f"Failed to resolve linked user for chat_id {chat_id}: {e}")
+    return None
+
+
 @router.post("/webhook")
 async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
     """
@@ -288,11 +306,15 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             iq = payload["inline_query"]
             query = (iq.get("query") or "").strip()
             iq_id = iq.get("id", "")
+            user_id = (iq.get("from") or {}).get("id")
+            linked_user_id = await _ensure_linked_user(user_id) if user_id else None
+            if not linked_user_id:
+                return {"status": "ok"}
             if query and iq_id:
                 from app.services.retrieval_engine import search_notes
                 from app.integrations.telegram import answer_inline_query
                 # Inline queries don't carry a chat_id; search without user scoping
-                results = await search_notes(query, limit=5, threshold=0.2, user_id=None)
+                results = await search_notes(query, limit=5, threshold=0.2, user_id=linked_user_id)
                 await answer_inline_query(iq_id, results)
             return {"status": "ok"}
         
@@ -301,6 +323,17 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             chat_id = payload["message"]["chat"]["id"]
             text = payload["message"].get("text", "").strip()
             reply_to = payload["message"].get("reply_to_message")
+            linked_user_id = await _ensure_linked_user(chat_id)
+
+            if not linked_user_id:
+                from app.integrations.telegram import bot as tg_bot
+                await tg_bot.send_message(
+                    chat_id=chat_id,
+                    text=_login_prompt(),
+                    parse_mode="Markdown",
+                    reply_markup=login_keyboard(),
+                )
+                return {"status": "ok"}
             
             if chat_id in _pending_actions:
                 pending = _pending_actions.pop(chat_id)
@@ -321,7 +354,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
                     full = text
                 
                 await send_typing(chat_id)
-                await _handle_note_command(chat_id, full)
+                await _handle_note_command(chat_id, full, user_id=linked_user_id)
                 return {"status": "ok"}
 
         # ── Callback query (button press) ────────────────────────────────
@@ -330,6 +363,21 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
             data = cq.get("data", "")
             chat_id = cq["message"]["chat"]["id"]
             msg_id = cq["message"]["message_id"]
+            linked_user_id = await _ensure_linked_user(chat_id)
+
+            if not linked_user_id:
+                try:
+                    from app.integrations.telegram import bot as tg_bot
+                    await tg_bot.answer_callback_query(callback_query_id=cq["id"], text="Please log in first.", show_alert=True)
+                    await tg_bot.send_message(
+                        chat_id=chat_id,
+                        text=_login_prompt(),
+                        parse_mode="Markdown",
+                        reply_markup=login_keyboard(),
+                    )
+                except Exception:
+                    pass
+                return {"status": "ok"}
 
             from app.integrations.telegram import bot as tg_bot
             try:
@@ -343,7 +391,7 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
 
                 if action == "note":
                     await send_typing(chat_id)
-                    await _handle_note_command(chat_id, f"/note {shortcode}")
+                    await _handle_note_command(chat_id, f"/note {shortcode}", user_id=linked_user_id)
                 
                 elif action == "edit":
                     _pending_actions[chat_id] = {"action": "edit", "shortcode": shortcode}
@@ -376,12 +424,16 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         
         if chat_id is not None and text:
             # Phase 0: resolve user identity at webhook entry
-            try:
-                user = get_or_create_user_by_chat_id(chat_id)
-                user_id = user.id
-            except Exception as e:
-                logger.warning(f"Failed to resolve user for chat_id {chat_id}: {e}")
-                user_id = None
+            user_id = await _ensure_linked_user(chat_id)
+            if not user_id:
+                from app.integrations.telegram import bot as tg_bot
+                await tg_bot.send_message(
+                    chat_id=chat_id,
+                    text=_login_prompt(),
+                    parse_mode="Markdown",
+                    reply_markup=login_keyboard(),
+                )
+                return {"status": "ok"}
 
             background_tasks.add_task(
                 process_telegram_ingestion,

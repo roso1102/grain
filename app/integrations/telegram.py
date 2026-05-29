@@ -71,6 +71,13 @@ async def send_message(chat_id: int, text: str) -> None:
         logger.error(f"Error sending message to Telegram chat {chat_id}: {e}")
 
 
+def login_keyboard() -> InlineKeyboardMarkup:
+    """Returns an inline button that opens the dashboard login page."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔐 Log in to Grain", url="https://higrain.vercel.app/login")],
+    ])
+
+
 # ── Chat Action (typing indicator) ───────────────────────────────────────────
 
 async def send_typing(chat_id: int) -> None:

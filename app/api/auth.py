@@ -47,12 +47,8 @@ def _verify_telegram_login(data: TelegramLoginData) -> bool:
             fields.append(f"{key}={value}")
     data_check_string = "\n".join(fields)
 
-    # Compute secret key: HMAC-SHA256 of bot token with "WebAppData" as key
-    secret_key = hmac.new(
-        b"WebAppData",
-        bot_token.encode("utf-8"),
-        hashlib.sha256,
-    ).digest()
+    # Telegram Login Widget verification uses SHA256(bot_token) as the secret key.
+    secret_key = hashlib.sha256(bot_token.encode("utf-8")).digest()
 
     # Compute expected hash
     computed_hash = hmac.new(
