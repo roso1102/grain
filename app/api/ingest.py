@@ -13,7 +13,7 @@ from app.services.understand import understand
 from app.services.topic_snapper import snap_topic
 from app.services.embedder import embed
 from app.services.retrieval_engine import search_notes
-from app.db.users import get_user_by_chat_id, get_user_by_id
+from app.db.users import get_user_by_chat_id, get_user_by_id, consume_telegram_link_token
 from app.services.relation_engine import build_relations_for_note
 from app.services.enrichment_engine import try_enrich
 from app.db.queries import insert_note
@@ -44,6 +44,43 @@ async def resolve_user_id(x_user_id: Optional[str] = Header(None)) -> Optional[U
     logger.warning(f"Invalid X-User-Id header: {x_user_id}")
     return None
 
+
+async def _try_link_from_start(chat_id: int, text: str) -> bool:
+    lower = text.lower().strip()
+    if not lower.startswith("/start "):
+        return False
+
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return False
+
+    token = parts[1].strip()
+    if not token:
+        return False
+
+    linked_user = consume_telegram_link_token(token, chat_id)
+    if not linked_user:
+        from app.integrations.telegram import bot as tg_bot
+        await tg_bot.send_message(
+            chat_id=chat_id,
+            text="🔒 That link has expired or was already used. Please generate a new link from the dashboard.",
+            parse_mode="Markdown",
+            reply_markup=login_keyboard(),
+        )
+        return True
+
+    from app.integrations.telegram import bot as tg_bot
+    welcome = (
+        "✅ *Telegram linked!*\n\n"
+        "Your dashboard account is now connected to this Telegram chat.\n"
+        "You can now use Grain commands here."
+    )
+    try:
+        await tg_bot.send_message(chat_id=chat_id, text=welcome, parse_mode="Markdown", reply_markup=grain_keyboard())
+    except Exception:
+        await send_message(chat_id, welcome)
+    return True
+
 async def process_telegram_ingestion(
     chat_id: int, 
     raw_input: str, 
@@ -63,6 +100,9 @@ async def process_telegram_ingestion(
         clean_input = raw_input.strip()
         
         # ── Route Telegram commands ──────────────────────────────────────
+        if clean_input.startswith("/start "):
+            if await _try_link_from_start(chat_id, clean_input):
+                return
         if clean_input == "/help" or clean_input == "/start" or \
            clean_input.startswith("/note") or clean_input.startswith("/edit") or \
            clean_input.startswith("/fact") or clean_input.startswith("/retitle") or \
@@ -283,6 +323,43 @@ async def _ensure_linked_user(chat_id: int) -> Optional[UUID]:
     except Exception as e:
         logger.warning(f"Failed to resolve linked user for chat_id {chat_id}: {e}")
     return None
+
+
+async def _try_link_from_start(chat_id: int, text: str) -> bool:
+    lower = text.lower().strip()
+    if not lower.startswith("/start "):
+        return False
+
+    parts = text.split(maxsplit=1)
+    if len(parts) < 2:
+        return False
+
+    token = parts[1].strip()
+    if not token:
+        return False
+
+    linked_user = consume_telegram_link_token(token, chat_id)
+    if not linked_user:
+        from app.integrations.telegram import bot as tg_bot
+        await tg_bot.send_message(
+            chat_id=chat_id,
+            text="🔒 That link has expired or was already used. Please generate a new link from the dashboard.",
+            parse_mode="Markdown",
+            reply_markup=login_keyboard(),
+        )
+        return True
+
+    from app.integrations.telegram import bot as tg_bot
+    welcome = (
+        "✅ *Telegram linked!*\n\n"
+        "Your dashboard account is now connected to this Telegram chat.\n"
+        "You can now use Grain commands here."
+    )
+    try:
+        await tg_bot.send_message(chat_id=chat_id, text=welcome, parse_mode="Markdown", reply_markup=grain_keyboard())
+    except Exception:
+        await send_message(chat_id, welcome)
+    return True
 
 
 @router.post("/webhook")

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str
     TELEGRAM_BOT_TOKEN: str
     TELEGRAM_BOT_ID: str = ""  # Numeric bot ID from BotFather (used as client_id for OIDC login)
+    TELEGRAM_BOT_USERNAME: str = "higrain_bot"
     GROQ_API_KEY: Optional[str] = None
     DEEPSEEK_API_KEY: Optional[str] = None
     NVIDIA_API_KEY: Optional[str] = None

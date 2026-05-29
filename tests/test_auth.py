@@ -47,3 +47,9 @@ def test_verify_telegram_login_widget_signature_rejects_bad_hash(monkeypatch):
     )
 
     assert auth._verify_telegram_login(data) is False
+
+
+def test_build_telegram_link_url(monkeypatch):
+    monkeypatch.setattr(auth.settings, "TELEGRAM_BOT_USERNAME", "higrain_bot")
+
+    assert auth.build_telegram_link_url("abc123") == "https://t.me/higrain_bot?start=abc123"
