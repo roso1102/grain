@@ -20,9 +20,9 @@ BEGIN
     JOIN pg_catalog.pg_class c ON p.polrelid = c.oid
     WHERE p.polname = 'users_select_own' AND c.relname = 'users'
   ) THEN
-    EXECUTE $$CREATE POLICY users_select_own ON users
+    EXECUTE 'CREATE POLICY users_select_own ON users
       FOR SELECT
-      USING (supabase_user_id::text = auth.uid());$$;
+      USING (supabase_user_id::text = auth.uid());';
   END IF;
 END
 $$;
@@ -34,9 +34,9 @@ BEGIN
     JOIN pg_catalog.pg_class c ON p.polrelid = c.oid
     WHERE p.polname = 'users_update_own' AND c.relname = 'users'
   ) THEN
-    EXECUTE $$CREATE POLICY users_update_own ON users
+    EXECUTE 'CREATE POLICY users_update_own ON users
       FOR UPDATE
-      USING (supabase_user_id::text = auth.uid());$$;
+      USING (supabase_user_id::text = auth.uid());';
   END IF;
 END
 $$;
@@ -48,9 +48,9 @@ BEGIN
     JOIN pg_catalog.pg_class c ON p.polrelid = c.oid
     WHERE p.polname = 'users_insert_self' AND c.relname = 'users'
   ) THEN
-    EXECUTE $$CREATE POLICY users_insert_self ON users
+    EXECUTE 'CREATE POLICY users_insert_self ON users
       FOR INSERT
-      WITH CHECK (supabase_user_id::text = auth.uid());$$;
+      WITH CHECK (supabase_user_id::text = auth.uid());';
   END IF;
 END
 $$;
