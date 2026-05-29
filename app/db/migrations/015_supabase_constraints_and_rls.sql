@@ -1,12 +1,11 @@
 -- Migration 015: Add uniqueness constraints, indexes, and RLS policies
 
 -- 1) Uniqueness constraints and indexes
-ALTER TABLE IF EXISTS users
-  ADD CONSTRAINT IF NOT EXISTS uq_users_supabase_user_id UNIQUE (supabase_user_id);
+-- Use unique indexes which are supported with IF NOT EXISTS in Postgres
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_supabase_user_id_idx ON users (supabase_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_telegram_chat_id_idx ON users (telegram_chat_id);
 
-ALTER TABLE IF EXISTS users
-  ADD CONSTRAINT IF NOT EXISTS uq_users_telegram_chat_id UNIQUE (telegram_chat_id);
-
+-- Also keep a simple index for lookups by supabase_user_id (non-unique index is optional)
 CREATE INDEX IF NOT EXISTS idx_users_supabase_user_id ON users(supabase_user_id);
 
 -- 2) Row Level Security: restrict access so that a signed-in Supabase user can only select/update their row.
