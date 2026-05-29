@@ -12,17 +12,48 @@ CREATE INDEX IF NOT EXISTS idx_users_supabase_user_id ON users(supabase_user_id)
 -- NOTE: Enabling RLS will block queries that do not present a valid JWT. Apply carefully and test.
 ALTER TABLE IF EXISTS users ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS users_select_own ON users
-  FOR SELECT
-  USING (supabase_user_id::text = auth.uid());
+-- Create policies only if they don't already exist (Postgres doesn't support IF NOT EXISTS on CREATE POLICY)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_policy p
+    JOIN pg_catalog.pg_class c ON p.polrelid = c.oid
+    WHERE p.polname = 'users_select_own' AND c.relname = 'users'
+  ) THEN
+    EXECUTE $$CREATE POLICY users_select_own ON users
+      FOR SELECT
+      USING (supabase_user_id::text = auth.uid());$$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS users_update_own ON users
-  FOR UPDATE
-  USING (supabase_user_id::text = auth.uid());
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_policy p
+    JOIN pg_catalog.pg_class c ON p.polrelid = c.oid
+    WHERE p.polname = 'users_update_own' AND c.relname = 'users'
+  ) THEN
+    EXECUTE $$CREATE POLICY users_update_own ON users
+      FOR UPDATE
+      USING (supabase_user_id::text = auth.uid());$$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS users_insert_self ON users
-  FOR INSERT
-  WITH CHECK (supabase_user_id::text = auth.uid());
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_catalog.pg_policy p
+    JOIN pg_catalog.pg_class c ON p.polrelid = c.oid
+    WHERE p.polname = 'users_insert_self' AND c.relname = 'users'
+  ) THEN
+    EXECUTE $$CREATE POLICY users_insert_self ON users
+      FOR INSERT
+      WITH CHECK (supabase_user_id::text = auth.uid());$$;
+  END IF;
+END
+$$;
 
 -- Important: server-side operations (migrations, backfill, service workers) should use the
 -- Supabase service_role key which bypasses RLS. Client requests will be subject to these policies.
