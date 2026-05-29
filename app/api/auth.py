@@ -245,14 +245,34 @@ async def get_current_user_info(
 
 @router.post("/telegram-link-token", response_model=TelegramLinkTokenResponse)
 async def telegram_link_token(authorization: Optional[str] = Header(None)):
-    """Creates a one-time token for linking the current Supabase-authenticated user to Telegram.
+    """Creates a one-time token for linking the current user to Telegram.
 
-    This endpoint expects the Supabase access token in the `Authorization: Bearer <token>` header.
+    This endpoint accepts either:
+    - an internal app session JWT (`Authorization: Bearer <session_token>`), or
+    - a Supabase access token (`Authorization: Bearer <supabase_token>`).
     """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing Authorization header")
-    access_token = authorization.replace("Bearer ", "").strip()
-    supa_user = await _verify_supabase_token(access_token)
+
+    token_str = authorization.replace("Bearer ", "").strip()
+
+    # 1) Try to treat it as our internal session token
+    try:
+        user_id = _verify_session_token(token_str)
+    except HTTPException:
+        user_id = None
+
+    if user_id:
+        # Issue token for existing Grain user (identified by internal UUID)
+        token = create_telegram_link_token(user_id)
+        return TelegramLinkTokenResponse(
+            token=token,
+            telegram_url=build_telegram_link_url(token),
+            expires_in_minutes=10,
+        )
+
+    # 2) Fallback: treat token as Supabase access token
+    supa_user = await _verify_supabase_token(token_str)
     supa_id = supa_user.get("id")
     if not supa_id:
         raise HTTPException(status_code=401, detail="Unable to determine Supabase user id")
@@ -264,7 +284,6 @@ async def telegram_link_token(authorization: Optional[str] = Header(None)):
         grain_user = None
     if not grain_user:
         display_name = None
-        # Try to derive a display name from Supabase user metadata
         meta = supa_user.get("user_metadata") or {}
         display_name = meta.get("full_name") or meta.get("name") or supa_user.get("email") or "Supabase User"
         grain_user = create_user_from_supabase(UUID(supa_id), display_name=display_name)
