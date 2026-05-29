@@ -22,7 +22,7 @@ BEGIN
   ) THEN
     EXECUTE 'CREATE POLICY users_select_own ON users
       FOR SELECT
-      USING (supabase_user_id::text = auth.uid());';
+      USING (supabase_user_id = auth.uid());';
   END IF;
 END
 $$;
@@ -36,7 +36,7 @@ BEGIN
   ) THEN
     EXECUTE 'CREATE POLICY users_update_own ON users
       FOR UPDATE
-      USING (supabase_user_id::text = auth.uid());';
+      USING (supabase_user_id = auth.uid());';
   END IF;
 END
 $$;
@@ -50,7 +50,7 @@ BEGIN
   ) THEN
     EXECUTE 'CREATE POLICY users_insert_self ON users
       FOR INSERT
-      WITH CHECK (supabase_user_id::text = auth.uid());';
+      WITH CHECK (supabase_user_id = auth.uid());';
   END IF;
 END
 $$;
