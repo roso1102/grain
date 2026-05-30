@@ -60,7 +60,11 @@ class ApiKeyResponse(BaseModel):
 def create_session_token(user_id: UUID) -> str:
     """Create a short-lived JWT session token."""
     if not settings.SESSION_SECRET:
-        raise HTTPException(status_code=500, detail="SESSION_SECRET not configured")
+        logger.error("SESSION_SECRET is not set — cannot create session tokens")
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfigured: SESSION_SECRET is not set. Contact the admin.",
+        )
     payload = {
         "sub": str(user_id),
         "exp": datetime.now(timezone.utc) + timedelta(days=7),
