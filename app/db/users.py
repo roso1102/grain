@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -145,3 +146,34 @@ def consume_telegram_link_token(token: str, telegram_chat_id: int) -> Optional[U
     except Exception as e:
         logger.warning(f"Failed to consume Telegram link token: {e}")
     return None
+
+
+def create_api_key(user_id: UUID, name: str = "Default API Key", expires_in_days: Optional[int] = None) -> dict:
+    """Creates an API key for a user. Returns the key record with the raw key (only shown once)."""
+    api_key = f"grain_{secrets.token_urlsafe(32)}"
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    key_prefix = api_key[:8]
+    
+    expires_at = None
+    if expires_in_days:
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=expires_in_days)).isoformat()
+    
+    result = supabase.table("api_keys").insert({
+        "user_id": str(user_id),
+        "key_hash": key_hash,
+        "key_prefix": key_prefix,
+        "name": name,
+        "expires_at": expires_at,
+    }).execute()
+    
+    if not result.data:
+        raise Exception("Failed to create API key")
+    
+    return {
+        "id": result.data[0]["id"],
+        "key": api_key,
+        "key_prefix": key_prefix,
+        "name": name,
+        "created_at": result.data[0]["created_at"],
+        "expires_at": expires_at,
+    }

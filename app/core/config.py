@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     TELEGRAM_WEBHOOK_SECRET: str = ""  # Secret token for Telegram webhook verification
     SESSION_SECRET: str = ""           # Secret for signing dashboard session JWTs (generate a random string)
     SUPABASE_SERVICE_KEY: str = ""     # service_role key for Supabase (bypasses RLS)
-    SUPABASE_JWT_SECRET: str = ""      # JWT secret from Supabase project settings (for verifying access tokens)
     
     # Port / Host configuration
     HOST: str = "0.0.0.0"
