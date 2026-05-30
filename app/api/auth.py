@@ -109,7 +109,7 @@ def _verify_code(user_id: UUID, code: str) -> bool:
         .select("*")\
         .eq("user_id", str(user_id))\
         .eq("code", code)\
-        .is_("used_at", "null")\
+        .is_("used_at", None)\
         .execute()
 
     if not result.data:
