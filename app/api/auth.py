@@ -104,7 +104,7 @@ def _store_code(user_id: UUID, code: str, ttl_minutes: int = 5) -> None:
 
 def _verify_code(user_id: UUID, code: str) -> bool:
     """Check if a code is valid, not expired, and not yet used. Marks it used on success."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
     result = supabase.table("auth_codes")\
         .select("*")\
         .eq("user_id", str(user_id))\
@@ -121,7 +121,7 @@ def _verify_code(user_id: UUID, code: str) -> bool:
         return False
 
     supabase.table("auth_codes")\
-        .update({"used_at": now})\
+        .update({"used_at": now.isoformat()})\
         .eq("id", record["id"])\
         .execute()
     return True
